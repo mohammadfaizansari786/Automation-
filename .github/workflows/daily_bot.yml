@@ -1,21 +1,20 @@
-name: News Bot Runner
+name: Max Efficiency Bot
 
 on:
   schedule:
-    # Runs every 60 minutes. 
-    # NOTE: GitHub Actions cron is not perfectly precise, it might be slightly delayed.
-    - cron: '0 * * * *' 
-  workflow_dispatch: # Allows you to manually click "Run" for testing
+    # Runs at minute 0 of every hour (24 times a day)
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 permissions:
-  contents: write # IMPORTANT: Allows the bot to save the history file back to the repo
+  contents: write # CRITICAL: Allows saving the daily count
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v3
 
       - name: Set up Python
@@ -23,26 +22,22 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Install dependencies
-        run: |
-          pip install tweepy feedparser
+      - name: Install Libraries
+        run: pip install tweepy feedparser
 
-      - name: Run Bot Script
+      - name: Run Bot
         env:
-          # These pull the keys you saved in GitHub Secrets
           API_KEY: ${{ secrets.API_KEY }}
           API_SECRET: ${{ secrets.API_SECRET }}
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
           ACCESS_SECRET: ${{ secrets.ACCESS_SECRET }}
-          BEARER_TOKEN: ${{ secrets.BEARER_TOKEN }}
         run: python bot.py
 
-      - name: Commit and Push History
-        # This step saves the updated posted_ids.txt back to your repo
+      - name: Save Memory
         run: |
-          git config --global user.name "GitHub Action Bot"
-          git config --global user.email "actions@github.com"
-          git add posted_ids.txt
-          # Only commit if the file actually changed (i.e., we posted something new)
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update post history" && git push)
+          git config --global user.name "Bot"
+          git config --global user.email "bot@github.com"
+          # We save both the History (what we posted) and State (daily count)
+          git add posted_ids.txt bot_state.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update tracker" && git push)
           
