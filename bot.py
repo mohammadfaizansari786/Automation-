@@ -4,137 +4,147 @@ import os
 import sys
 import json
 import datetime
+import time
 
 # --- CONFIGURATION ---
+# 1. LIMITS
+DAILY_LIMIT = 16  # 16 posts x 30 days = 480 posts/month (Safe buffer for 500 limit)
+
+# 2. BETTER SOURCES (Mix of News & Leaks)
+RSS_FEEDS = [
+    # --- F1 & Cars ---
+    "https://www.motorsport.com/rss/f1/news/", 
+    "https://www.racefans.net/feed/",
+    "https://www.autoblog.com/rss.xml",
+    
+    # --- Gaming (News + Leaks) ---
+    "https://www.reddit.com/r/GamingLeaksAndRumours/top/.rss?t=day", # Best for leaks
+    "https://www.gematsu.com/feed", # Best for Japanese game news
+    "https://www.videogameschronicle.com/feed/", # Reliable scoops
+    
+    # --- Movies & Series ---
+    "https://deadline.com/feed/", # Hollywood industry standard
+    "https://www.reddit.com/r/MarvelStudiosSpoilers/new/.rss",
+    "https://screenrant.com/feed/"
+]
+
+# 3. KEYS
 API_KEY = os.getenv("API_KEY")
 API_SECRET = os.getenv("API_SECRET")
 ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 ACCESS_SECRET = os.getenv("ACCESS_SECRET")
-BEARER_TOKEN = os.getenv("BEARER_TOKEN")
 
-# Limit configuration
-MAX_POSTS_PER_DAY = 3
-POSTS_PER_RUN = 1 # Post only 1 item per hour to spread them out
-
-RSS_FEEDS = [
-    "https://www.motorsport.com/rss/f1/news/",
-    "https://www.ign.com/feeds/games/rss",
-    "https://www.reddit.com/r/GamingLeaksAndRumours/top/.rss?t=day"
-]
-
+# 4. FILES
 HISTORY_FILE = "posted_ids.txt"
 STATE_FILE = "bot_state.json"
 
-# --- AUTHENTICATION ---
-def get_twitter_client():
+# --- HELPER FUNCTIONS ---
+def get_client():
+    if not API_KEY:
+        print("❌ Error: API Keys missing.")
+        sys.exit(1)
     return tweepy.Client(
-        bearer_token=BEARER_TOKEN,
         consumer_key=API_KEY,
         consumer_secret=API_SECRET,
         access_token=ACCESS_TOKEN,
         access_token_secret=ACCESS_SECRET
     )
 
-# --- FILE MANAGEMENT ---
-def get_posted_ids():
-    if not os.path.exists(HISTORY_FILE):
-        open(HISTORY_FILE, 'a').close()
-        return []
+def load_history():
+    if not os.path.exists(HISTORY_FILE): return []
     with open(HISTORY_FILE, "r") as f:
         return f.read().splitlines()
 
-def save_posted_id(post_id):
+def save_history(post_id):
     with open(HISTORY_FILE, "a") as f:
         f.write(f"{post_id}\n")
 
-def get_daily_state():
+def check_daily_limit():
+    """Checks if we have hit the 16 posts/day limit"""
     today = datetime.date.today().isoformat()
-    default_state = {"date": today, "count": 0}
     
-    if not os.path.exists(STATE_FILE):
-        return default_state
-    
-    try:
+    # Load state
+    if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r") as f:
-            state = json.load(f)
-            # If the date in the file is not today, reset the counter
-            if state.get("date") != today:
-                return default_state
-            return state
-    except:
-        return default_state
+            try:
+                state = json.load(f)
+            except:
+                state = {"date": today, "count": 0}
+    else:
+        state = {"date": today, "count": 0}
 
-def update_state(count):
-    today = datetime.date.today().isoformat()
-    state = {"date": today, "count": count}
+    # Reset counter if it's a new day
+    if state["date"] != today:
+        state = {"date": today, "count": 0}
+        
+    print(f"📊 Daily Stats: {state['count']}/{DAILY_LIMIT} posts used.")
+    return state
+
+def update_daily_limit(state):
+    state["count"] += 1
     with open(STATE_FILE, "w") as f:
         json.dump(state, f)
 
-# --- MAIN LOGIC ---
-def run_bot():
-    print("--- Starting Bot Run ---")
+# --- MAIN BOT ---
+def run():
+    print("--- 🤖 Smart Bot Starting ---")
     
-    # 1. Check Daily Limit
-    state = get_daily_state()
-    print(f"Daily Status: {state['count']}/{MAX_POSTS_PER_DAY} posts used today ({state['date']}).")
-    
-    if state['count'] >= MAX_POSTS_PER_DAY:
-        print("Daily limit reached. Sleeping until tomorrow.")
+    # 1. Check Limits
+    state = check_daily_limit()
+    if state["count"] >= DAILY_LIMIT:
+        print("⛔ Daily limit reached. Stopping to save monthly quota.")
         return
 
-    # 2. Prepare Connection
-    if not API_KEY:
-        print("Error: API Keys not found.")
-        sys.exit(1)
-
-    client = get_twitter_client()
-    posted_ids = get_posted_ids()
-    posts_made_this_run = 0
+    client = get_client()
+    history = load_history()
     
-    # 3. Check Feeds
+    # 2. Find ONE new thing to post
+    # We iterate through feeds until we find 1 good candidate
+    post_made = False
+    
     for feed_url in RSS_FEEDS:
-        # Stop if we hit the limit for this specific run
-        if posts_made_this_run >= POSTS_PER_RUN:
-            break
-
-        print(f"Checking: {feed_url}")
+        if post_made: break # Stop if we posted 1 thing
+        
         try:
+            print(f"🔍 Scanning: {feed_url}")
             feed = feedparser.parse(feed_url)
-            if not feed.entries:
-                continue
+            if not feed.entries: continue
             
-            # Look at top 5 entries to find one we haven't posted
+            # Look at top 5 recent entries
             for entry in feed.entries[:5]:
                 post_id = entry.id if 'id' in entry else entry.link
                 
-                if post_id not in posted_ids:
+                if post_id not in history:
                     title = entry.title
                     link = entry.link
                     
-                    tweet_text = f"🚨 NEWS: {title}\n\nRead more: {link}\n\n#Gaming #Motorsport"
-                    if len(tweet_text) > 280:
-                        tweet_text = f"🚨 NEWS: {title[:200]}...\n\n{link}"
-
+                    # Formatting: Clean and punchy
+                    hashtags = "#News #Gaming #Motorsport"
+                    if "reddit" in feed_url: hashtags += " #Leaks #Rumor"
+                    
+                    text = f"🚨 {title}\n\n🔗 {link}\n\n{hashtags}"
+                    
+                    # Truncate to 280
+                    if len(text) > 280:
+                        text = f"🚨 {title[:180]}...\n\n🔗 {link}\n\n{hashtags}"
+                    
                     try:
-                        print(f"Attempting to post: {title}")
-                        client.create_tweet(text=tweet_text)
+                        print(f"   ➤ Posting: {title}")
+                        client.create_tweet(text=text)
                         
-                        # Success: Update all files
-                        save_posted_id(post_id)
-                        state['count'] += 1
-                        update_state(state['count'])
-                        
-                        posts_made_this_run += 1
-                        print(f"✅ Success! Total today: {state['count']}")
-                        
-                        # Stop looking at feeds once we post our 1 item
-                        break 
+                        save_history(post_id)
+                        update_daily_limit(state)
+                        post_made = True
+                        print("   ✅ Success!")
+                        break # Break inner loop
                         
                     except Exception as e:
-                        print(f"❌ Error posting to X: {e}")
-                        
+                        print(f"   ❌ Error posting: {e}")
         except Exception as e:
-            print(f"Error processing feed {feed_url}: {e}")
+            print(f"   ⚠️ Feed Error: {e}")
+
+    if not post_made:
+        print("💤 No new content found this run.")
 
 if __name__ == "__main__":
-    run_bot()
+    run()
