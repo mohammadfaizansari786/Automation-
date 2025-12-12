@@ -13,53 +13,53 @@ import textwrap
 DAILY_LIMIT = 16  # Safe for Free Tier
 POSTS_PER_RUN = 1 
 
+# --- HEADERS (Crucial: Prevents Wiki from blocking you) ---
+WIKI_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+}
+
 # --- 🧠 THE LIBRARY OF EVERYTHING ---
-QUOTES = [
-    "“Aerodynamics are for people who can't build engines.” — Enzo Ferrari",
-    "“If you no longer go for a gap that exists, you are no longer a racing driver.” — Ayrton Senna",
-    "“Speed has never killed anyone, suddenly becoming stationary... that’s what gets you.” — Jeremy Clarkson",
-    "“To finish first, you must first finish.” — Juan Manuel Fangio",
-    "“Straight roads are for fast cars, turns are for fast drivers.” — Colin McRae",
-    "“I don’t drive to get from A to B. I enjoy feeling the car’s reactions, becoming part of it.” — Enzo Ferrari",
-    "“When I see a curve, I don’t think about the curve. I think about how I can get out of it.” — Gilles Villeneuve",
-    "“Racing is life. Anything before or after is just waiting.” — Steve McQueen",
-    "“You win some, lose some, and wreck some.” — Dale Earnhardt",
-    "“Adding power makes you faster on the straights. Subtracting weight makes you faster everywhere.” — Colin Chapman",
-    "“The winner ain’t the one with the fastest car, it’s the one who refuses to lose.” — Dale Earnhardt",
-    "“A racing car has only one objective: to win.” — Stirling Moss",
-    "“Winning is everything. The only ones who remember you when you come second are your wife and your dog.” — Damon Hill",
-    "“Cornering is like bringing a woman to climax.” — Jackie Stewart",
-    "“It is not always possible to be the best, but it is always possible to improve your own performance.” — Jackie Stewart",
-    "“Simplify, then add lightness.” — Colin Chapman",
-    "“I am not designed to come second or third. I am designed to win.” — Ayrton Senna",
-    "“Race cars are neither beautiful nor ugly. They become beautiful when they win.” — Enzo Ferrari",
-    "“Once you’ve raced, you never forget it... and you never get over it.” — Richard Childress"
+QUOTES_DATA = [
+    ("Aerodynamics are for people who can't build engines.", "Enzo Ferrari"),
+    ("If you no longer go for a gap that exists, you are no longer a racing driver.", "Ayrton Senna"),
+    ("Speed has never killed anyone, suddenly becoming stationary... that’s what gets you.", "Jeremy Clarkson"),
+    ("To finish first, you must first finish.", "Juan Manuel Fangio"),
+    ("Straight roads are for fast cars, turns are for fast drivers.", "Colin McRae"),
+    ("I don’t drive to get from A to B. I enjoy feeling the car’s reactions, becoming part of it.", "Enzo Ferrari"),
+    ("When I see a curve, I don’t think about the curve. I think about how I can get out of it.", "Gilles Villeneuve"),
+    ("Racing is life. Anything before or after is just waiting.", "Steve McQueen"),
+    ("You win some, lose some, and wreck some.", "Dale Earnhardt"),
+    ("Adding power makes you faster on the straights. Subtracting weight makes you faster everywhere.", "Colin Chapman"),
+    ("The winner ain’t the one with the fastest car, it’s the one who refuses to lose.", "Dale Earnhardt"),
+    ("Simplify, then add lightness.", "Colin Chapman"),
+    ("I am not designed to come second or third. I am designed to win.", "Ayrton Senna"),
+    ("Race cars are neither beautiful nor ugly. They become beautiful when they win.", "Enzo Ferrari"),
+    ("Second place is just the first of the losers.", "Enzo Ferrari")
 ]
+
+# Simple list of names for Poll Distractors
+LEGEND_NAMES = list(set([q[1] for q in QUOTES_DATA] + [
+    "Niki Lauda", "James Hunt", "Lewis Hamilton", "Michael Schumacher", 
+    "Carroll Shelby", "Ken Miles", "Adrian Newey", "Christian Horner"
+]))
 
 TOPICS = {
     "CARS": [
-        # Hypercars & Holy Trinity
         "McLaren F1", "Ferrari F40", "Porsche 959", "Bugatti Veyron", "Bugatti Chiron",
         "Ferrari LaFerrari", "Porsche 918 Spyder", "McLaren P1", "Pagani Zonda",
         "Pagani Huayra", "Koenigsegg Agera", "Rimac Nevera", "Aston Martin Valkyrie",
         "Mercedes-AMG One", "Lexus LFA", "Ford GT", "Maserati MC12", "Ferrari Enzo",
         "Lamborghini Veneno", "Lamborghini Sesto Elemento", "Bugatti EB110", "Jaguar XJ220",
-        
-        # JDM Legends
         "Nissan Skyline GT-R R32", "Nissan Skyline GT-R R33", "Nissan Skyline GT-R R34",
         "Toyota Supra A80", "Mazda RX-7 FD", "Honda NSX (first generation)", "Subaru Impreza 22B",
         "Mitsubishi Lancer Evolution VI", "Nissan Silvia S15", "Toyota AE86", "Mazda 787B",
         "Toyota 2000GT", "Datsun 240Z", "Honda S2000", "Mitsubishi 3000GT VR-4",
-        
-        # Euro Classics & Muscle
         "Ferrari 250 GTO", "Lamborghini Countach", "Lamborghini Miura", "Lamborghini Diablo",
         "Mercedes-Benz 300 SL", "Jaguar E-Type", "Aston Martin DB5", "BMW 507",
         "Shelby Cobra", "Ford GT40", "Dodge Viper GTS", "Plymouth Superbird",
         "Chevrolet Corvette C2", "Pontiac GTO", "Dodge Charger Daytona", "Hemi Cuda",
         "Lancia Stratos", "Audi Quattro", "Lancia Delta Integrale", "Porsche 911 Carrera RS 2.7",
         "BMW M3 E30", "Mercedes-Benz 190E 2.5-16 Evolution II", "Renault 5 Turbo",
-        
-        # Modern Icons
         "Porsche Carrera GT", "Alfa Romeo 8C Competizione", "Ford Mustang Shelby GT350R",
         "Dodge Challenger SRT Demon", "Nissan GT-R Nismo", "Ferrari 458 Speciale",
         "Lamborghini Murciélago SV", "Aston Martin One-77", "Koenigsegg Jesko"
@@ -120,7 +120,7 @@ def get_clients():
 
     return client_v2, api_v1
 
-# --- WIKI FETCHING ---
+# --- WIKI FETCHING (SAFE MODE) ---
 def get_wiki_data(topic):
     try:
         url = "https://en.wikipedia.org/w/api.php"
@@ -129,7 +129,8 @@ def get_wiki_data(topic):
             "titles": topic, "pithumbsize": 1000, "exintro": 1, "explaintext": 1, "redirects": 1
         }
         
-        response = requests.get(url, params=params, timeout=10)
+        # ADDED HEADERS HERE TO MIMIC BROWSER
+        response = requests.get(url, params=params, headers=WIKI_HEADERS, timeout=15)
         data = response.json()
         pages = data.get("query", {}).get("pages", {})
         
@@ -141,13 +142,16 @@ def get_wiki_data(topic):
                 "image_url": page_data.get("thumbnail", {}).get("source", None),
                 "url": f"https://en.wikipedia.org/wiki/{page_data.get('title', topic).replace(' ', '_')}"
             }
-    except: return None
+    except Exception as e:
+        print(f"⚠️ Wiki Fetch Error: {e}")
+        return None
     return None
 
 def download_image(image_url):
     if not image_url: return None
     try:
-        response = requests.get(image_url, stream=True, timeout=10)
+        # ADDED HEADERS HERE TOO
+        response = requests.get(image_url, headers=WIKI_HEADERS, stream=True, timeout=15)
         if response.status_code == 200:
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as temp:
                 for chunk in response.iter_content(1024): temp.write(chunk)
@@ -220,32 +224,44 @@ def run_versus_mode(client_v2, api_v1, history):
         return False
 
 # =========================================
-# 💬 MODE 2: QUOTE OF THE DAY
+# 📊 MODE 2: QUOTE POLL
 # =========================================
-def run_quote_mode(client_v2, history):
-    print("   💬 Running Quote Mode...")
-    quote = random.choice(QUOTES)
-    quote_id = f"quote_{hash(quote)}"
+def run_quote_poll_mode(client_v2, history):
+    print("   📊 Running Quote Quiz Mode...")
     
+    target = random.choice(QUOTES_DATA)
+    quote_text = target[0]
+    correct_author = target[1]
+    
+    quote_id = f"quote_{hash(quote_text)}"
     if quote_id in history: return False
     
+    distractors = [n for n in LEGEND_NAMES if n != correct_author]
+    random.shuffle(distractors)
+    choices = distractors[:3] + [correct_author]
+    random.shuffle(choices) 
+    
     try:
-        text = f"{quote}\n\n#Motorsport #Inspiration #CarCulture"
-        client_v2.create_tweet(text=text)
+        text = f"🗣️ WHO SAID IT?\n\n\"{quote_text}\"\n\nVote below! 👇 #MotorsportQuiz #Quotes"
+        client_v2.create_tweet(text=text, poll_options=choices[:4], poll_duration_minutes=1440)
         save_history(quote_id)
-        print("   ✅ Quote Posted.")
+        print("   ✅ Quote Poll Posted.")
         return True
     except Exception as e:
-        print(f"   ❌ Quote Failed: {e}")
-        return False
+        print(f"   ❌ Poll Failed: {e}")
+        # Fallback if poll fails
+        try:
+            client_v2.create_tweet(text=f"“{quote_text}” — {correct_author}\n\n#Motorsport #Inspiration")
+            save_history(quote_id)
+            return True
+        except: return False
 
 # =========================================
-# 📚 MODE 3: THE LIBRARY (Standard Post)
+# 📚 MODE 3: THE LIBRARY (Threaded)
 # =========================================
 def run_standard_mode(client_v2, api_v1, history):
     print("   📚 Running Library Mode...")
     
-    # Weighted Categories: 50% Cars, 15% Tech, 20% Legends, 15% Tracks
     cat_choices = ["CARS", "TECH", "LEGENDS", "CIRCUITS"]
     cat_weights = [50, 15, 20, 15]
     
@@ -257,7 +273,6 @@ def run_standard_mode(client_v2, api_v1, history):
     data = get_wiki_data(topic)
     if not data: return False
 
-    # Dynamic Hook based on Category
     if category == "CARS":
         hook = f"🏎️ ICONIC MACHINE: {data['title']}"
         tags = "#CarCulture #AutomotiveHistory #DreamGarage"
@@ -273,6 +288,7 @@ def run_standard_mode(client_v2, api_v1, history):
 
     tweets = []
     safe_title = "".join(x for x in data['title'] if x.isalnum())
+    
     tweets.append(f"{hook}\n\n{textwrap.shorten(data['text'], 160)}\n\n🧵 Thread below 👇\n#{safe_title} {tags}")
     
     chunks = textwrap.wrap(data['text'], 270)
@@ -298,7 +314,8 @@ def run_standard_mode(client_v2, api_v1, history):
             else:
                 resp = client_v2.create_tweet(text=txt, in_reply_to_tweet_id=prev_id)
             prev_id = resp.data['id']
-            time.sleep(2)
+            # DELAY BETWEEN TWEETS IN THREAD (Humanizes typing speed)
+            time.sleep(random.randint(5, 12)) 
         save_history(topic)
         print(f"   ✅ Posted {topic}")
         return True
@@ -309,6 +326,14 @@ def run_standard_mode(client_v2, api_v1, history):
 # --- MAIN RUNNER ---
 def run():
     print("--- 🤖 AutoLibrary Bot Starting ---")
+    
+    # 💤 CRITICAL: HUMANIZATION DELAY
+    # Random sleep between 1 min and 15 mins
+    # Prevents "Top of the Hour" robotic pattern
+    delay = random.randint(60, 900)
+    print(f"   💤 Sleeping for {delay} seconds to mimic human behavior...")
+    time.sleep(delay)
+
     state = get_daily_state()
     print(f"📊 Daily Count: {state['count']}/{DAILY_LIMIT}")
 
@@ -320,14 +345,14 @@ def run():
     history = load_history()
     
     # 🎲 DECIDE MODE
-    # 15% Battle, 15% Quote, 70% Library Entry
+    # 15% Battle | 15% Quote Poll | 70% Thread
     dice = random.random()
     success = False
     
     if dice < 0.15:
         success = run_versus_mode(client_v2, api_v1, history)
     elif dice < 0.30:
-        success = run_quote_mode(client_v2, history)
+        success = run_quote_poll_mode(client_v2, history)
     
     if not success:
         run_standard_mode(client_v2, api_v1, history)
@@ -336,3 +361,4 @@ def run():
 
 if __name__ == "__main__":
     run()
+    
