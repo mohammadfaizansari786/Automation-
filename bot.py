@@ -1,5 +1,4 @@
 import tweepy
-import feedparser
 import os
 import sys
 import json
@@ -8,46 +7,89 @@ import time
 import random
 import requests
 import tempfile
+import textwrap
 
 # --- CONFIGURATION ---
-# Free Tier Limit: 500 posts/month (~16/day).
-DAILY_LIMIT = 16  
+DAILY_LIMIT = 16  # Safe for Free Tier
 POSTS_PER_RUN = 1 
 
-# --- STATIC FACTS (Fallback) ---
-CAR_FACTS = [
-    "🏎️ Did you know? A modern F1 car generates enough downforce to drive upside down at 120mph!",
-    "🚗 Fact: The Toyota Corolla is the best-selling car nameplate in history (50M+ sold).",
-    "🚙 Trivia: The first speeding ticket was issued in 1902 for going 45mph.",
-    "🔧 Fact: The average car is made of ~30,000 unique parts.",
-    "🛑 History: Volvo gave away the 3-point seatbelt patent in 1959 to save lives.",
-    "⚡ Fact: The first electric car was built in 1832, decades before the first gas engine.",
-    "🐎 Trivia: The Ford Mustang was almost named the 'Cougar' or 'Torino'.",
-    "💨 Fact: Top Fuel dragsters accelerate faster than the Space Shuttle.",
-    "🛣️ Did you know? 65% of the German Autobahn has no speed limit.",
-    "🚗 Stat: 95% of a car's lifetime is spent parked.",
-    "🏎️ History: The first Le Mans 24 Hours race was held in 1923.",
-    "🚙 Trivia: Volkswagen Group owns Audi, Bentley, Bugatti, Lamborghini, Porsche, and Ducati.",
+# --- 🧠 THE LIBRARY OF EVERYTHING ---
+QUOTES = [
+    "“Aerodynamics are for people who can't build engines.” — Enzo Ferrari",
+    "“If you no longer go for a gap that exists, you are no longer a racing driver.” — Ayrton Senna",
+    "“Speed has never killed anyone, suddenly becoming stationary... that’s what gets you.” — Jeremy Clarkson",
+    "“To finish first, you must first finish.” — Juan Manuel Fangio",
+    "“Straight roads are for fast cars, turns are for fast drivers.” — Colin McRae",
+    "“I don’t drive to get from A to B. I enjoy feeling the car’s reactions, becoming part of it.” — Enzo Ferrari",
+    "“When I see a curve, I don’t think about the curve. I think about how I can get out of it.” — Gilles Villeneuve",
+    "“Racing is life. Anything before or after is just waiting.” — Steve McQueen",
+    "“You win some, lose some, and wreck some.” — Dale Earnhardt",
+    "“Adding power makes you faster on the straights. Subtracting weight makes you faster everywhere.” — Colin Chapman",
+    "“The winner ain’t the one with the fastest car, it’s the one who refuses to lose.” — Dale Earnhardt",
+    "“A racing car has only one objective: to win.” — Stirling Moss",
+    "“Winning is everything. The only ones who remember you when you come second are your wife and your dog.” — Damon Hill",
+    "“Cornering is like bringing a woman to climax.” — Jackie Stewart",
+    "“It is not always possible to be the best, but it is always possible to improve your own performance.” — Jackie Stewart",
+    "“Simplify, then add lightness.” — Colin Chapman",
+    "“I am not designed to come second or third. I am designed to win.” — Ayrton Senna",
+    "“Race cars are neither beautiful nor ugly. They become beautiful when they win.” — Enzo Ferrari",
+    "“Once you’ve raced, you never forget it... and you never get over it.” — Richard Childress"
 ]
 
-# --- RSS SOURCES ---
-RSS_FEEDS = {
-    "RACING": [
-        "https://www.motorsport.com/rss/f1/news/",
-        "https://www.racefans.net/feed/",
-        "https://www.motorsport.com/rss/wec/news/",
-        "https://www.motorsport.com/rss/wrc/news/",
-        "https://dirtfish.com/feed/",
-        "https://www.crash.net/rss/motogp",
-        "https://www.motorsport.com/rss/nascar/news/",
+TOPICS = {
+    "CARS": [
+        # Hypercars & Holy Trinity
+        "McLaren F1", "Ferrari F40", "Porsche 959", "Bugatti Veyron", "Bugatti Chiron",
+        "Ferrari LaFerrari", "Porsche 918 Spyder", "McLaren P1", "Pagani Zonda",
+        "Pagani Huayra", "Koenigsegg Agera", "Rimac Nevera", "Aston Martin Valkyrie",
+        "Mercedes-AMG One", "Lexus LFA", "Ford GT", "Maserati MC12", "Ferrari Enzo",
+        "Lamborghini Veneno", "Lamborghini Sesto Elemento", "Bugatti EB110", "Jaguar XJ220",
+        
+        # JDM Legends
+        "Nissan Skyline GT-R R32", "Nissan Skyline GT-R R33", "Nissan Skyline GT-R R34",
+        "Toyota Supra A80", "Mazda RX-7 FD", "Honda NSX (first generation)", "Subaru Impreza 22B",
+        "Mitsubishi Lancer Evolution VI", "Nissan Silvia S15", "Toyota AE86", "Mazda 787B",
+        "Toyota 2000GT", "Datsun 240Z", "Honda S2000", "Mitsubishi 3000GT VR-4",
+        
+        # Euro Classics & Muscle
+        "Ferrari 250 GTO", "Lamborghini Countach", "Lamborghini Miura", "Lamborghini Diablo",
+        "Mercedes-Benz 300 SL", "Jaguar E-Type", "Aston Martin DB5", "BMW 507",
+        "Shelby Cobra", "Ford GT40", "Dodge Viper GTS", "Plymouth Superbird",
+        "Chevrolet Corvette C2", "Pontiac GTO", "Dodge Charger Daytona", "Hemi Cuda",
+        "Lancia Stratos", "Audi Quattro", "Lancia Delta Integrale", "Porsche 911 Carrera RS 2.7",
+        "BMW M3 E30", "Mercedes-Benz 190E 2.5-16 Evolution II", "Renault 5 Turbo",
+        
+        # Modern Icons
+        "Porsche Carrera GT", "Alfa Romeo 8C Competizione", "Ford Mustang Shelby GT350R",
+        "Dodge Challenger SRT Demon", "Nissan GT-R Nismo", "Ferrari 458 Speciale",
+        "Lamborghini Murciélago SV", "Aston Martin One-77", "Koenigsegg Jesko"
     ],
-    "CARS_AND_LEAKS": [
-        "https://www.carscoops.com/feed/",
-        "https://www.motor1.com/rss/category/spy/",
-        "https://www.autoblog.com/rss.xml",
-        "https://www.caranddriver.com/rss/all.xml",
+    "TECH": [
+        "W16 engine", "V12 engine", "Turbocharger", "Supercharger", "VTEC",
+        "Dual-clutch transmission", "Limited-slip differential", "Monocoque",
+        "Active aerodynamics", "KERS", "Carbon-ceramic brakes", "Regenerative braking",
+        "Desmodromic valves", "Dry sump", "Ground effect (cars)", "Torque vectoring",
+        "Flat-six engine", "Rotary engine", "Pushrod suspension", "Multilink suspension",
+        "Space frame chassis", "Transaxle", "Variable valve timing", "Direct injection",
+        "Sequential manual transmission", "Halo (safety device)", "DRS (Drag Reduction System)"
     ],
-    "FACTS": ["INTERNAL_LIST"]
+    "LEGENDS": [
+        "Ayrton Senna", "Michael Schumacher", "Lewis Hamilton", "Juan Manuel Fangio",
+        "Jim Clark", "Alain Prost", "Niki Lauda", "Jackie Stewart", "Stirling Moss",
+        "Sebastian Vettel", "Fernando Alonso", "Max Verstappen", "Kimi Räikkönen",
+        "Colin McRae", "Sébastien Loeb", "Ken Block", "Michele Mouton", "Tom Kristensen",
+        "Dale Earnhardt", "Richard Petty", "Jeff Gordon", "Mario Andretti", "A.J. Foyt",
+        "Enzo Ferrari", "Ferruccio Lamborghini", "Horacio Pagani", "Gordon Murray",
+        "Adrian Newey", "Colin Chapman", "Carroll Shelby"
+    ],
+    "CIRCUITS": [
+        "Nürburgring", "Circuit de la Sarthe", "Circuit de Monaco", "Silverstone Circuit",
+        "Circuit de Spa-Francorchamps", "Suzuka International Racing Course", "Mount Panorama Circuit",
+        "Indianapolis Motor Speedway", "Daytona International Speedway", "Laguna Seca",
+        "Autodromo Nazionale di Monza", "Interlagos Circuit", "Pikes Peak International Hill Climb",
+        "Goodwood Circuit", "Circuit of the Americas", "Red Bull Ring", "Hockenheimring",
+        "Brands Hatch", "Imola Circuit", "Zandvoort Circuit"
+    ]
 }
 
 # KEYS
@@ -66,7 +108,6 @@ def get_clients():
         print("❌ Error: API Keys missing.")
         sys.exit(1)
 
-    # v2 Client (For Posting Text)
     client_v2 = tweepy.Client(
         consumer_key=API_KEY,
         consumer_secret=API_SECRET,
@@ -74,230 +115,224 @@ def get_clients():
         access_token_secret=ACCESS_SECRET
     )
 
-    # v1.1 API (For Media Uploads - Required for Free Tier images)
     auth = tweepy.OAuth1UserHandler(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_SECRET)
     api_v1 = tweepy.API(auth)
 
     return client_v2, api_v1
 
-# --- HELPER FUNCTIONS ---
+# --- WIKI FETCHING ---
+def get_wiki_data(topic):
+    try:
+        url = "https://en.wikipedia.org/w/api.php"
+        params = {
+            "action": "query", "format": "json", "prop": "extracts|pageimages",
+            "titles": topic, "pithumbsize": 1000, "exintro": 1, "explaintext": 1, "redirects": 1
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        pages = data.get("query", {}).get("pages", {})
+        
+        for page_id, page_data in pages.items():
+            if page_id == "-1": return None
+            return {
+                "title": page_data.get("title", topic),
+                "text": page_data.get("extract", "").strip(),
+                "image_url": page_data.get("thumbnail", {}).get("source", None),
+                "url": f"https://en.wikipedia.org/wiki/{page_data.get('title', topic).replace(' ', '_')}"
+            }
+    except: return None
+    return None
+
+def download_image(image_url):
+    if not image_url: return None
+    try:
+        response = requests.get(image_url, stream=True, timeout=10)
+        if response.status_code == 200:
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as temp:
+                for chunk in response.iter_content(1024): temp.write(chunk)
+                return temp.name
+    except: pass
+    return None
+
+# --- STATE MANAGEMENT ---
 def load_history():
     if not os.path.exists(HISTORY_FILE): return set()
-    with open(HISTORY_FILE, "r") as f:
-        return set(line.strip() for line in f if line.strip())
+    with open(HISTORY_FILE, "r") as f: return set(line.strip() for line in f if line.strip())
 
-def save_history(post_id):
-    with open(HISTORY_FILE, "a") as f:
-        f.write(f"{post_id}\n")
+def save_history(entry_id):
+    with open(HISTORY_FILE, "a") as f: f.write(f"{entry_id}\n")
 
 def get_daily_state():
     today = datetime.date.today().isoformat()
-    default_state = {"date": today, "count": 0}
+    default = {"date": today, "count": 0}
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r") as f:
                 state = json.load(f)
-                if state.get("date") != today: return default_state
+                if state.get("date") != today: return default
                 return state
-        except: return default_state
-    return default_state
+        except: return default
+    return default
 
 def update_state(count):
     today = datetime.date.today().isoformat()
-    with open(STATE_FILE, "w") as f:
-        json.dump({"date": today, "count": count}, f)
+    with open(STATE_FILE, "w") as f: json.dump({"date": today, "count": count}, f)
 
-def extract_image_url(entry):
-    """Attempts to find an image URL in the RSS entry"""
-    # 1. Try 'media_content' (Standard RSS media)
-    if 'media_content' in entry:
-        media = entry.media_content
-        if isinstance(media, list) and len(media) > 0:
-            return media[0]['url']
-            
-    # 2. Try 'links' (Enclosures)
-    if 'links' in entry:
-        for link in entry.links:
-            if link.get('type', '').startswith('image/'):
-                return link['href']
-                
-    # 3. Try parsing summary for <img> tag (Basic check)
-    if 'summary' in entry:
-        if 'src="' in entry.summary:
-            try:
-                start = entry.summary.find('src="') + 5
-                end = entry.summary.find('"', start)
-                return entry.summary[start:end]
-            except: pass
-            
-    return None
-
-def download_and_upload_image(api_v1, image_url):
-    """Downloads image to temp file and uploads to Twitter v1.1 API"""
-    if not image_url: return None
+# =========================================
+# ⚔️ MODE 1: VERSUS BATTLE
+# =========================================
+def run_versus_mode(client_v2, api_v1, history):
+    print("   ⚔️ Running VS Battle Mode...")
+    candidates = random.sample(TOPICS["CARS"], 2)
+    car1 = get_wiki_data(candidates[0])
+    car2 = get_wiki_data(candidates[1])
+    
+    if not car1 or not car2: return False
+    
+    text = f"⚔️ HEAD-TO-HEAD BATTLE ⚔️\n\n🔴 {car1['title']}\n      VS\n🔵 {car2['title']}\n\nWhich keys are you grabbing? 🤔\n#CarBattle #Versus #{car1['title'].replace(' ','')} #{car2['title'].replace(' ','')}"
+    
+    media_ids = []
+    for c in [car1, car2]:
+        if c['image_url']:
+            path = download_image(c['image_url'])
+            if path:
+                try:
+                    media = api_v1.media_upload(filename=path)
+                    media_ids.append(media.media_id)
+                    os.remove(path)
+                except: pass
     
     try:
-        # Download
-        response = requests.get(image_url, stream=True)
-        if response.status_code != 200: return None
-        
-        # Save to temp file
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as temp:
-            for chunk in response.iter_content(1024):
-                temp.write(chunk)
-            temp_path = temp.name
+        if media_ids:
+            t1 = client_v2.create_tweet(text=text, media_ids=media_ids)
+        else:
+            t1 = client_v2.create_tweet(text=text)
             
-        # Upload to Twitter
-        print("   📸 Uploading image...")
-        media = api_v1.media_upload(filename=temp_path)
+        reply_text = f"📊 TALE OF THE TAPE:\n\n1️⃣ {car1['title']}: {textwrap.shorten(car1['text'], 100)}\n\n2️⃣ {car2['title']}: {textwrap.shorten(car2['text'], 100)}\n\n👇 Vote in the replies!"
+        client_v2.create_tweet(text=reply_text, in_reply_to_tweet_id=t1.data['id'])
         
-        # Clean up
-        os.remove(temp_path)
-        
-        return media.media_id
+        save_history(f"vs_{candidates[0]}_{candidates[1]}")
+        print("   ✅ Battle Posted.")
+        return True
     except Exception as e:
-        print(f"   ⚠️ Image upload failed: {e}")
-        return None
+        print(f"   ❌ Battle Failed: {e}")
+        return False
 
-def get_engagement_template(title, category):
-    """Returns a catchy intro based on the content"""
-    if category == "FACTS": return ""
+# =========================================
+# 💬 MODE 2: QUOTE OF THE DAY
+# =========================================
+def run_quote_mode(client_v2, history):
+    print("   💬 Running Quote Mode...")
+    quote = random.choice(QUOTES)
+    quote_id = f"quote_{hash(quote)}"
     
-    # Racing Templates
-    if category == "RACING":
-        templates = ["🏁 RACE UPDATE:", "🏎️ JUST IN:", "🚨 BREAKING:", "🗣️ PADDOCK TALK:"]
-        if "Qualifying" in title: return "⏱️ QUALI REPORT:"
-        if "Result" in title or "Winner" in title: return "🏆 RACE RESULT:"
-        return random.choice(templates)
-        
-    # Car/Leak Templates
-    if category == "CARS_AND_LEAKS":
-        if "Spy" in title or "Leaked" in title:
-            return random.choice(["📸 SPY SHOTS:", "👀 LEAKED:", "🕵️ SCOOP:"])
-        return random.choice(["🚗 NEW REVEAL:", "⚡ AUTO NEWS:", "🚙 FIRST LOOK:"])
-        
-    return "🚨 NEWS:"
-
-def get_smart_hashtags(url, title, category):
-    tags = []
-    url = url.lower()
-    title = title.lower()
-
-    if category == "FACTS": return "#CarFacts #DidYouKnow #Trivia #Motorsport"
-
-    # Specific Topics
-    if "f1" in url: tags.extend(["#F1", "#Formula1"])
-    elif "wec" in url: tags.extend(["#WEC", "#LeMans", "#Hypercar"])
-    elif "wrc" in url: tags.extend(["#WRC", "#Rally"])
-    elif "motogp" in url: tags.extend(["#MotoGP"])
-    elif "nascar" in url: tags.extend(["#NASCAR"])
+    if quote_id in history: return False
     
-    # Brands
-    brands = ["ferrari", "porsche", "bmw", "mercedes", "ford", "toyota", "tesla", "audi", "lamborghini", "red bull"]
-    for brand in brands:
-        if brand in title: tags.append(f"#{brand.replace(' ', '')}")
+    try:
+        text = f"{quote}\n\n#Motorsport #Inspiration #CarCulture"
+        client_v2.create_tweet(text=text)
+        save_history(quote_id)
+        print("   ✅ Quote Posted.")
+        return True
+    except Exception as e:
+        print(f"   ❌ Quote Failed: {e}")
+        return False
 
-    # Engagement Boosters
-    boosters = ["#Motorsport", "#AutoNews", "#CarCulture", "#Racing"]
-    tags.append(random.choice(boosters))
+# =========================================
+# 📚 MODE 3: THE LIBRARY (Standard Post)
+# =========================================
+def run_standard_mode(client_v2, api_v1, history):
+    print("   📚 Running Library Mode...")
     
-    return " ".join(list(dict.fromkeys(tags))[:4])
+    # Weighted Categories: 50% Cars, 15% Tech, 20% Legends, 15% Tracks
+    cat_choices = ["CARS", "TECH", "LEGENDS", "CIRCUITS"]
+    cat_weights = [50, 15, 20, 15]
+    
+    category = random.choices(cat_choices, weights=cat_weights)[0]
+    available = [t for t in TOPICS[category] if t not in history]
+    if not available: available = TOPICS[category]
+    topic = random.choice(available)
+    
+    data = get_wiki_data(topic)
+    if not data: return False
 
-# --- MAIN BOT ---
+    # Dynamic Hook based on Category
+    if category == "CARS":
+        hook = f"🏎️ ICONIC MACHINE: {data['title']}"
+        tags = "#CarCulture #AutomotiveHistory #DreamGarage"
+    elif category == "TECH":
+        hook = f"⚙️ ENGINEERING: {data['title']}"
+        tags = "#Engineering #CarTech #HowItWorks"
+    elif category == "LEGENDS":
+        hook = f"🏆 RACING LEGEND: {data['title']}"
+        tags = "#Motorsport #F1 #Racing #Legend"
+    elif category == "CIRCUITS":
+        hook = f"🏁 SACRED GROUND: {data['title']}"
+        tags = "#Racetrack #Motorsport #History"
+
+    tweets = []
+    safe_title = "".join(x for x in data['title'] if x.isalnum())
+    tweets.append(f"{hook}\n\n{textwrap.shorten(data['text'], 160)}\n\n🧵 Thread below 👇\n#{safe_title} {tags}")
+    
+    chunks = textwrap.wrap(data['text'], 270)
+    for c in chunks[:4]: 
+        if c not in tweets[0]: tweets.append(c)
+    tweets.append(f"📖 Full History: {data['url']}")
+
+    media_id = None
+    if data['image_url']:
+        path = download_image(data['image_url'])
+        if path:
+            try:
+                media = api_v1.media_upload(filename=path)
+                media_id = media.media_id
+                os.remove(path)
+            except: pass
+
+    try:
+        prev_id = None
+        for i, txt in enumerate(tweets):
+            if i == 0:
+                resp = client_v2.create_tweet(text=txt, media_ids=[media_id] if media_id else None)
+            else:
+                resp = client_v2.create_tweet(text=txt, in_reply_to_tweet_id=prev_id)
+            prev_id = resp.data['id']
+            time.sleep(2)
+        save_history(topic)
+        print(f"   ✅ Posted {topic}")
+        return True
+    except Exception as e:
+        print(f"   ❌ Library Post Failed: {e}")
+        return False
+
+# --- MAIN RUNNER ---
 def run():
-    print("--- 🚀 High-Engagement Bot Starting ---")
-    
+    print("--- 🤖 AutoLibrary Bot Starting ---")
     state = get_daily_state()
-    print(f"📊 Daily Progress: {state['count']}/{DAILY_LIMIT}")
-    
+    print(f"📊 Daily Count: {state['count']}/{DAILY_LIMIT}")
+
     if state["count"] >= DAILY_LIMIT:
         print("⛔ Daily limit reached.")
         return
 
     client_v2, api_v1 = get_clients()
     history = load_history()
-    posts_made = 0
     
-    # 1. Decide Category (Weighted: 45% Racing, 45% Cars, 10% Facts)
-    choice = random.choices(["RACING", "CARS_AND_LEAKS", "FACTS"], weights=[45, 45, 10], k=1)[0]
-    print(f"🎲 Category: {choice}")
-
-    # 2. Handle FACTS
-    if choice == "FACTS":
-        fact = random.choice(CAR_FACTS)
-        fact_id = f"fact_{hash(fact)}"
+    # 🎲 DECIDE MODE
+    # 15% Battle, 15% Quote, 70% Library Entry
+    dice = random.random()
+    success = False
+    
+    if dice < 0.15:
+        success = run_versus_mode(client_v2, api_v1, history)
+    elif dice < 0.30:
+        success = run_quote_mode(client_v2, history)
+    
+    if not success:
+        run_standard_mode(client_v2, api_v1, history)
         
-        if fact_id not in history:
-            text = f"💡 {fact}\n\n#CarFacts #DidYouKnow #Trivia"
-            try:
-                print(f"   ➤ Posting Fact...")
-                client_v2.create_tweet(text=text)
-                save_history(fact_id)
-                update_state(state["count"] + 1)
-                posts_made = 1
-            except Exception as e:
-                print(f"   ❌ Error: {e}")
-
-    # 3. Handle RSS with Media
-    else:
-        feeds = RSS_FEEDS[choice]
-        random.shuffle(feeds)
-        
-        for feed_url in feeds:
-            if posts_made > 0: break
-            
-            try:
-                print(f"🔍 Scanning: {feed_url}")
-                feed = feedparser.parse(feed_url)
-                if not feed.entries: continue
-                
-                for entry in feed.entries[:5]:
-                    if posts_made > 0: break
-                    
-                    post_id = getattr(entry, 'id', entry.link)
-                    if post_id not in history:
-                        title = entry.title
-                        link = entry.link
-                        
-                        # 1. Get Image
-                        image_url = extract_image_url(entry)
-                        media_id = None
-                        if image_url:
-                            media_id = download_and_upload_image(api_v1, image_url)
-                        
-                        # 2. Build Text
-                        intro = get_engagement_template(title, choice)
-                        hashtags = get_smart_hashtags(feed_url, title, choice)
-                        
-                        # Max length calc (Link=23, Media doesn't count against text in v2 usually, but safe buffer)
-                        reserved = len(link) + len(hashtags) + len(intro) + 15
-                        max_len = 280 - reserved
-                        if len(title) > max_len: title = title[:max_len-3] + "..."
-                        
-                        text = f"{intro} {title}\n\n🔗 {link}\n\n{hashtags}"
-                        
-                        try:
-                            print(f"   ➤ Posting: {title[:30]}...")
-                            
-                            # Post with or without media
-                            if media_id:
-                                client_v2.create_tweet(text=text, media_ids=[media_id])
-                            else:
-                                client_v2.create_tweet(text=text)
-                                
-                            save_history(post_id)
-                            history.add(post_id)
-                            update_state(state["count"] + 1)
-                            posts_made = 1
-                            print("   ✅ Success!")
-                        except Exception as e:
-                            print(f"   ❌ API Error: {e}")
-                            
-            except Exception as e:
-                print(f"   ⚠️ Feed Error: {e}")
-
-    if posts_made == 0:
-        print("💤 No suitable content found.")
+    update_state(state["count"] + 1)
 
 if __name__ == "__main__":
     run()
