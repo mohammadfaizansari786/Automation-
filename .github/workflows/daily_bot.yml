@@ -1,20 +1,20 @@
-name: Max Efficiency Bot
+name: Auto Bot Runner
 
 on:
   schedule:
-    # Runs at minute 0 of every hour (24 times a day)
-    - cron: '0 * * * *'
-  workflow_dispatch:
+    # Run at minute 13 (avoids the :00 bot trap)
+    - cron: '13 * * * *'
+  workflow_dispatch: # Allows you to click "Run Now" manually
 
 permissions:
-  contents: write # CRITICAL: Allows saving the daily count
+  contents: write
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Set up Python
@@ -22,10 +22,12 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Install Libraries
-        run: pip install tweepy feedparser
+      - name: Install dependencies
+        # Updated to include requests
+        run: |
+          pip install tweepy requests
 
-      - name: Run Bot
+      - name: Run Bot Script
         env:
           API_KEY: ${{ secrets.API_KEY }}
           API_SECRET: ${{ secrets.API_SECRET }}
@@ -33,11 +35,11 @@ jobs:
           ACCESS_SECRET: ${{ secrets.ACCESS_SECRET }}
         run: python bot.py
 
-      - name: Save Memory
+      - name: Commit and Push History
         run: |
-          git config --global user.name "Bot"
-          git config --global user.email "bot@github.com"
-          # We save both the History (what we posted) and State (daily count)
+          git config --global user.name "GitHub Action Bot"
+          git config --global user.email "actions@github.com"
           git add posted_ids.txt bot_state.json
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update tracker" && git push)
+          # This saves the "Daily Count" so the bot knows when to stop
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update bot history" && git push)
           
