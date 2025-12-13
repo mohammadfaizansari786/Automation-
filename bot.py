@@ -9,7 +9,7 @@ import requests
 import google.generativeai as genai
 
 # --- CONFIGURATION ---
-DAILY_LIMIT = 18
+DAILY_LIMIT = 16
 
 # --- TOPICS (Encyclopedia Mode) ---
 TOPICS = {
