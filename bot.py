@@ -9,33 +9,17 @@ import requests
 import google.generativeai as genai
 
 # --- CONFIGURATION ---
-DAILY_LIMIT = 16
+DAILY_LIMIT = 18
 
-# --- TOPICS (Encyclopedia Mode) ---
-TOPICS = {
-    "LEGENDARY_CARS": [
-        "McLaren F1", "Ferrari F40", "Porsche 959", "Bugatti Chiron", "Pagani Huayra",
-        "Lexus LFA", "Ford GT40", "Ferrari Enzo", "Nissan Skyline GT-R R34", "Mazda 787B",
-        "Lamborghini Countach", "Mercedes 300SL Gullwing", "Aston Martin Valkyrie", 
-        "Koenigsegg Jesko", "BMW E38", "Lancia Stratos", "Audi Quattro S1"
-    ],
-    "CAR_TECH": [
-        "W16 Engine configuration", "Naturally Aspirated V12", "Variable Geometry Turbocharger", 
-        "Dual-clutch transmission mechanics", "Active Aerodynamics systems", "F1 KERS System", 
-        "Carbon-Ceramic Brakes utility", "Pushrod vs Pullrod Suspension", "Rotary (Wankel) Engine",
-        "Limited Slip Differential (LSD)", "Ground Effect aerodynamics", "Dry Sump Lubrication"
-    ],
-    "DRIVERS": [
-        "Ayrton Senna", "Michael Schumacher", "Lewis Hamilton", "Niki Lauda", 
-        "Jim Clark", "Alain Prost", "Juan Manuel Fangio", "Ken Block", 
-        "Colin McRae", "Michele Mouton", "Max Verstappen", "Yuki Tsunoda"
-    ],
-    "RACETRACKS": [
-        "Nürburgring Nordschleife", "Circuit de Monaco", "Spa-Francorchamps", 
-        "Suzuka Circuit", "Le Mans (Circuit de la Sarthe)", "Mount Panorama (Bathurst)", 
-        "Silverstone Circuit", "Laguna Seca (The Corkscrew)", "Monza"
-    ]
-}
+# --- TOPICS (Cars Only) ---
+TOPICS = [
+    "McLaren F1", "Ferrari F40", "Porsche 959", "Bugatti Chiron", "Pagani Huayra",
+    "Lexus LFA", "Ford GT40", "Ferrari Enzo", "Nissan Skyline GT-R R34", "Mazda 787B",
+    "Lamborghini Countach", "Mercedes 300SL Gullwing", "Aston Martin Valkyrie", 
+    "Koenigsegg Jesko", "BMW E38", "Lancia Stratos", "Audi Quattro S1",
+    "Porsche Carrera GT", "Jaguar E-Type", "Lamborghini Miura", "Dodge Viper ACR",
+    "Subaru Impreza 22B", "Toyota Supra MK4", "Honda NSX-R", "Shelby Cobra 427"
+]
 
 # --- AUTHENTICATION ---
 api_key = os.getenv("API_KEY")
@@ -86,43 +70,20 @@ def update_state(count):
     with open(STATE_FILE, "w") as f: json.dump({"date": today, "count": count}, f)
 
 # --- 🧠 AI BRAIN (GEMINI) ---
-def generate_content(mode, topic_data):
+def generate_content(car_name):
     """
-    Generates text using Gemini. 
-    Returns a LIST of strings. If it's a thread, it returns [tweet1, tweet2, tweet3].
+    Generates a 3-tweet thread about a specific car.
     """
     model = genai.GenerativeModel('gemini-2.5-flash')
     
-    if mode == "CAR_TECH":
-        # Tech needs details -> Thread
-        prompt = (
-            f"Write a 3-tweet educational thread about '{topic_data}'. "
-            "Tweet 1: Hook and basic definition. "
-            "Tweet 2: How it works technically (engineering focus). "
-            "Tweet 3: Why it is important for performance. "
-            "Separate each tweet strictly with '|||'. Keep each under 240 chars."
-        )
-    elif mode == "LEGENDARY_CARS":
-        # Cars need history -> Thread
-        prompt = (
-            f"Write a 3-tweet thread admiring the legendary '{topic_data}'. "
-            "Tweet 1: The legacy and visual appeal. "
-            "Tweet 2: Engine specs and performance stats. "
-            "Tweet 3: Why it is an icon today. "
-            "Separate each tweet strictly with '|||'. Keep each under 240 chars."
-        )
-    elif mode == "DRIVERS":
-        prompt = (
-            f"Write a 2-tweet tribute to racing driver '{topic_data}'. "
-            "Tweet 1: Their status and driving style. "
-            "Tweet 2: Their most famous achievement or championship. "
-            "Separate each tweet strictly with '|||'. Keep each under 240 chars."
-        )
-    else: # RACETRACKS or general
-        prompt = (
-            f"Write a professional, exciting tweet (under 240 chars) about the race track '{topic_data}'. "
-            "Mention its most famous corner. Include 2 hashtags."
-        )
+    prompt = (
+        f"Write a 3-tweet thread admiring the legendary car '{car_name}'. "
+        "Tweet 1: Focus on its iconic design and visual appeal. "
+        "Tweet 2: Highlight its engine specs, horsepower, or unique engineering features. "
+        "Tweet 3: Explain its legacy or why it is a collector's dream today. "
+        "Separate each tweet strictly with '|||'. "
+        "Keep each tweet under 240 chars. Use 2 hashtags total in the thread."
+    )
 
     try:
         response = model.generate_content(prompt)
@@ -135,11 +96,11 @@ def generate_content(mode, topic_data):
         return []
 
 # --- 📸 IMAGES (UNSPLASH) ---
-def get_unsplash_image(query):
+def get_unsplash_image(car_name):
     if not UNSPLASH_KEY: return None, None
     
-    # Improve query for better results
-    search_query = f"{query} automotive wallpaper"
+    # Specific query for car photography
+    search_query = f"{car_name} automotive"
     print(f"   📸 Searching Unsplash for: {search_query}")
     
     try:
@@ -205,18 +166,17 @@ def post_thread(client_v2, api_v1, tweets, image_path=None, image_credit=None):
 
 # --- 🏁 RUNNERS ---
 
-def run_encyclopedia_post(client_v2, api_v1, history):
-    # Pick Category & Topic
-    cat = random.choice(list(TOPICS.keys()))
-    topic = random.choice([t for t in TOPICS[cat] if t not in history] or TOPICS[cat])
+def run_car_post(client_v2, api_v1, history):
+    # Pick Topic (Cars Only)
+    topic = random.choice([t for t in TOPICS if t not in history] or TOPICS)
     
-    print(f"   📚 Topic ({cat}): {topic}")
+    print(f"   🏎️ Selected Car: {topic}")
     
     # 1. Get Image
     img_path, credit = get_unsplash_image(topic)
     
     # 2. Get Thread Content
-    tweet_parts = generate_content(cat, topic)
+    tweet_parts = generate_content(topic)
     if not tweet_parts: return False
     
     # 3. Post
@@ -227,11 +187,11 @@ def run_encyclopedia_post(client_v2, api_v1, history):
         
     if success:
         save_history(topic)
-        print("   ✅ Encyclopedia Thread Posted.")
+        print("   ✅ Car Thread Posted.")
     return success
 
 def run():
-    print("--- 🤖 SUPER-BOT INITIATED ---")
+    print("--- 🤖 CAR BOT INITIATED ---")
     
     state = get_daily_state()
     if state["count"] >= DAILY_LIMIT:
@@ -241,12 +201,12 @@ def run():
     client_v2, api_v1 = get_clients()
     history = load_history()
     
-    # 100% Encyclopedia Mode (No News)
-    success = run_encyclopedia_post(client_v2, api_v1, history)
+    # Always run the car post logic
+    success = run_car_post(client_v2, api_v1, history)
         
     if success:
         update_state(state["count"] + 1)
 
 if __name__ == "__main__":
     run()
-
+    
