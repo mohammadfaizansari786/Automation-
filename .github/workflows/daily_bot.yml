@@ -2,9 +2,9 @@ name: Auto Bot Runner
 
 on:
   schedule:
-    # Run at minute 13 (avoids the :00 bot trap)
+    # Runs at minute 13 of every hour
     - cron: '13 * * * *'
-  workflow_dispatch: # Allows you to click "Run Now" manually
+  workflow_dispatch: # Allows manual trigger
 
 permissions:
   contents: write
@@ -23,7 +23,6 @@ jobs:
           python-version: '3.9'
 
       - name: Install dependencies
-        # Updated to include requests
         run: |
           pip install tweepy requests
 
@@ -40,6 +39,5 @@ jobs:
           git config --global user.name "GitHub Action Bot"
           git config --global user.email "actions@github.com"
           git add posted_ids.txt bot_state.json
-          # This saves the "Daily Count" so the bot knows when to stop
           git diff --quiet && git diff --staged --quiet || (git commit -m "Update bot history" && git push)
           
