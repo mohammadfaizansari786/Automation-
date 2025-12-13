@@ -7,6 +7,7 @@ import time
 import random
 import requests
 import google.generativeai as genai
+import tempfile
 
 # --- CONFIGURATION ---
 DAILY_LIMIT = 18
@@ -89,20 +90,18 @@ def generate_content(car_name):
     try:
         response = model.generate_content(prompt)
         text = response.text.strip()
-        # Split by delimiter to get thread parts
         parts = [p.strip() for p in text.split('|||') if p.strip()]
         return parts
     except Exception as e:
         print(f"   ⚠️ Gemini Error: {e}")
         return []
 
-# --- 📸 IMAGES (GOOGLE SEARCH) ---
+# --- 📸 IMAGES (ROBUST GOOGLE SEARCH) ---
 def get_google_image(car_name):
     if not GOOGLE_SEARCH_API_KEY or not SEARCH_ENGINE_ID:
         print("❌ Missing Google Search Keys.")
         return None, None
     
-    # Query optimized for high-quality car photos
     query = f"{car_name} car wallpaper 4k"
     print(f"   📸 Searching Google Images for: {query}")
 
@@ -112,29 +111,50 @@ def get_google_image(car_name):
         'cx': SEARCH_ENGINE_ID,
         'key': GOOGLE_SEARCH_API_KEY,
         'searchType': 'image',
-        'num': 1,
-        'fileType': 'jpg',  # filter for JPEGs
+        'num': 3,  # Fetch 3 results in case the first fails
+        'fileType': 'jpg',
         'safe': 'active'
+    }
+
+    # Headers to mimic a real browser (Prevents 403 Forbidden errors)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
 
     try:
         resp = requests.get(url, params=params).json()
-        if 'items' in resp and len(resp['items']) > 0:
-            result = resp['items'][0]
-            image_url = result['link']
-            # Google images don't always have a single "photographer" name like Unsplash, 
-            # so we credit the domain source or leave it blank.
-            source_display = result.get('displayLink', 'Web Source')
-            
-            # Download
-            print(f"   ⬇️ Downloading image from: {image_url}")
-            img_data = requests.get(image_url, timeout=10).content
-            import tempfile
-            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-                f.write(img_data)
-                return f.name, source_display
+        items = resp.get('items', [])
+        
+        if not items:
+            print("   ⚠️ No images found.")
+            return None, None
+
+        # Try downloading images one by one until successful
+        for item in items:
+            image_url = item['link']
+            source_display = item.get('displayLink', 'Web Source')
+            print(f"   ⬇️ Attempting download: {image_url}")
+
+            try:
+                img_resp = requests.get(image_url, headers=headers, timeout=10)
+                
+                # Check if download was actually successful
+                if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                        f.write(img_resp.content)
+                        print(f"   ✅ Image downloaded successfully ({len(img_resp.content)} bytes).")
+                        return f.name, source_display
+                else:
+                    print(f"   ⚠️ Download failed (Status: {img_resp.status_code}). Trying next...")
+
+            except Exception as e:
+                print(f"   ⚠️ Error downloading specific image: {e}")
+                continue
+
     except Exception as e:
-        print(f"   ⚠️ Google Search Error: {e}")
+        print(f"   ⚠️ Google Search API Error: {e}")
+    
+    print("   ❌ Could not download any valid image.")
     return None, None
 
 # --- 🚀 POSTING LOGIC (THREADS) ---
@@ -150,14 +170,14 @@ def post_thread(client_v2, api_v1, tweets, image_path=None, image_credit=None):
             # Attach image to first tweet only
             media_ids = []
             if i == 0 and image_path:
-                print("   📤 Uploading media...")
-                media = api_v1.media_upload(filename=image_path)
-                media_ids = [media.media_id]
-                # Add credit to text if fits (optional for Google Images, but good practice)
-                # if image_credit:
-                #    credit_text = f" 📸 {image_credit}"
-                #    if len(text) + len(credit_text) < 280:
-                #        text += credit_text
+                print(f"   📤 Uploading media: {image_path}")
+                try:
+                    media = api_v1.media_upload(filename=image_path)
+                    media_ids = [media.media_id]
+                    print("   ✅ Media upload successful.")
+                except Exception as e:
+                    print(f"   ❌ Media upload failed: {e}")
+                    media_ids = [] # Continue without image if upload fails
 
             # Post Tweet
             if i == 0:
@@ -183,12 +203,10 @@ def post_thread(client_v2, api_v1, tweets, image_path=None, image_credit=None):
 # --- 🏁 RUNNERS ---
 
 def run_car_post(client_v2, api_v1, history):
-    # Pick Topic (Cars Only)
     topic = random.choice([t for t in TOPICS if t not in history] or TOPICS)
-    
     print(f"   🏎️ Selected Car: {topic}")
     
-    # 1. Get Image (Using Google Custom Search)
+    # 1. Get Image
     img_path, credit = get_google_image(topic)
     
     # 2. Get Thread Content
@@ -198,6 +216,7 @@ def run_car_post(client_v2, api_v1, history):
     # 3. Post
     success = post_thread(client_v2, api_v1, tweet_parts, img_path, credit)
     
+    # Cleanup
     if img_path and os.path.exists(img_path):
         os.remove(img_path)
         
@@ -217,7 +236,6 @@ def run():
     client_v2, api_v1 = get_clients()
     history = load_history()
     
-    # Always run the car post logic
     success = run_car_post(client_v2, api_v1, history)
         
     if success:
