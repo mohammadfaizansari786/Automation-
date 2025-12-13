@@ -11,6 +11,7 @@ import tempfile
 
 # --- CONFIGURATION ---
 DAILY_LIMIT = 18
+IMAGES_PER_TWEET = 4  # Twitter allows max 4 images per tweet
 
 # --- TOPICS (Cars Only) ---
 TOPICS = [
@@ -37,7 +38,11 @@ STATE_FILE = "bot_state.json"
 
 def get_clients():
     if not api_key or not GEMINI_KEY:
-        print("❌ Error: Missing API Keys.")
+        print("❌ Error: Missing API Keys (Twitter or Gemini).")
+        sys.exit(1)
+    
+    if not GOOGLE_SEARCH_API_KEY or not SEARCH_ENGINE_ID:
+        print("❌ Error: Missing Google Search Keys.")
         sys.exit(1)
 
     client_v2 = tweepy.Client(consumer_key=api_key, consumer_secret=api_secret, access_token=access_token, access_token_secret=access_secret)
@@ -71,20 +76,31 @@ def update_state(count):
     today = datetime.date.today().isoformat()
     with open(STATE_FILE, "w") as f: json.dump({"date": today, "count": count}, f)
 
-# --- 🧠 AI BRAIN (GEMINI) ---
+# --- 🧠 AI BRAIN (IMPROVED WRITING) ---
 def generate_content(car_name):
     """
-    Generates a 3-tweet thread about a specific car.
+    Generates a high-quality, engaging 3-tweet thread using Gemini.
     """
     model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = (
-        f"Write a 3-tweet thread admiring the legendary car '{car_name}'. "
-        "Tweet 1: Focus on its iconic design and visual appeal. "
-        "Tweet 2: Highlight its engine specs, horsepower, or unique engineering features. "
-        "Tweet 3: Explain its legacy or why it is a collector's dream today. "
-        "Separate each tweet strictly with '|||'. "
-        "Keep each tweet under 240 chars. Use 2 hashtags total in the thread."
+        f"Act as a professional automotive journalist and car enthusiast. "
+        f"Write a viral, high-energy 3-tweet thread about the '{car_name}'.\n\n"
+        
+        "Tweet 1 (The Hook): Start with a captivating statement about the car's design or presence. "
+        "Make the reader feel the emotion of seeing it. End with a subtle 'thread 🧵' emoji.\n"
+        
+        "Tweet 2 (The Specs): Focus on the engineering. Use specific numbers (HP, Top Speed, Year). "
+        "Use bullet points or emojis for stats to make it readable (e.g., 🏁 600HP, 🔊 V12). "
+        "Describe the sound or the driving experience.\n"
+        
+        "Tweet 3 (The Legacy): Why is this car a legend? Is it a race winner? A poster car? "
+        "End with a strong closing thought. Include exactly 3 relevant hashtags at the very bottom.\n\n"
+        
+        "Formatting Constraints:\n"
+        "- Separate tweets strictly with '|||'.\n"
+        "- Max 260 characters per tweet (leave room for images/replying).\n"
+        "- No generic intro like 'Here is a thread'."
     )
 
     try:
@@ -96,13 +112,14 @@ def generate_content(car_name):
         print(f"   ⚠️ Gemini Error: {e}")
         return []
 
-# --- 📸 IMAGES (ROBUST GOOGLE SEARCH) ---
-def get_google_image(car_name):
-    if not GOOGLE_SEARCH_API_KEY or not SEARCH_ENGINE_ID:
-        print("❌ Missing Google Search Keys.")
-        return None, None
-    
-    query = f"{car_name} car wallpaper 4k"
+# --- 📸 IMAGES (ROBUST MULTI-IMAGE FETCH) ---
+def get_google_images(car_name):
+    """
+    Fetches up to 4 high-quality images for the car using Google Custom Search.
+    Includes User-Agent headers to avoid 403 blocks.
+    """
+    # Refined query for better results
+    query = f"{car_name} car exterior wallpaper 4k"
     print(f"   📸 Searching Google Images for: {query}")
 
     url = "https://www.googleapis.com/customsearch/v1"
@@ -111,75 +128,78 @@ def get_google_image(car_name):
         'cx': SEARCH_ENGINE_ID,
         'key': GOOGLE_SEARCH_API_KEY,
         'searchType': 'image',
-        'num': 3,  # Fetch 3 results in case the first fails
+        'num': 8,  # Fetch extra to allow for filtering bad links
         'fileType': 'jpg',
         'safe': 'active'
     }
 
-    # Headers to mimic a real browser (Prevents 403 Forbidden errors)
+    # Headers mimic a real browser to prevent blocking
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
+
+    downloaded_files = []
 
     try:
         resp = requests.get(url, params=params).json()
         items = resp.get('items', [])
         
-        if not items:
+        if not items: 
             print("   ⚠️ No images found.")
-            return None, None
+            return []
 
-        # Try downloading images one by one until successful
         for item in items:
+            if len(downloaded_files) >= IMAGES_PER_TWEET:
+                break
+                
             image_url = item['link']
-            source_display = item.get('displayLink', 'Web Source')
-            print(f"   ⬇️ Attempting download: {image_url}")
-
             try:
+                # Download with timeout and headers
                 img_resp = requests.get(image_url, headers=headers, timeout=10)
                 
-                # Check if download was actually successful
-                if img_resp.status_code == 200 and len(img_resp.content) > 1000:
-                    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-                        f.write(img_resp.content)
-                        print(f"   ✅ Image downloaded successfully ({len(img_resp.content)} bytes).")
-                        return f.name, source_display
-                else:
-                    print(f"   ⚠️ Download failed (Status: {img_resp.status_code}). Trying next...")
-
+                # Check for valid image content (status 200 + sufficient size)
+                if img_resp.status_code == 200 and len(img_resp.content) > 10000: # Min 10KB
+                    f = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+                    f.write(img_resp.content)
+                    f.close()
+                    downloaded_files.append(f.name)
+                    print(f"   ✅ Downloaded: {image_url[:60]}...")
             except Exception as e:
-                print(f"   ⚠️ Error downloading specific image: {e}")
+                # Silently skip bad images
                 continue
 
     except Exception as e:
         print(f"   ⚠️ Google Search API Error: {e}")
     
-    print("   ❌ Could not download any valid image.")
-    return None, None
+    return downloaded_files
 
-# --- 🚀 POSTING LOGIC (THREADS) ---
-def post_thread(client_v2, api_v1, tweets, image_path=None, image_credit=None):
+# --- 🚀 POSTING LOGIC (GALLERY THREADS) ---
+def post_thread(client_v2, api_v1, tweets, image_paths=[]):
     """
-    Posts a thread. Attaches image to the first tweet if available.
+    Posts a thread. Attaches up to 4 images to the first tweet as a gallery.
     """
     first_tweet_id = None
     previous_tweet_id = None
     
     for i, text in enumerate(tweets):
         try:
-            # Attach image to first tweet only
             media_ids = []
-            if i == 0 and image_path:
-                print(f"   📤 Uploading media: {image_path}")
-                try:
-                    media = api_v1.media_upload(filename=image_path)
-                    media_ids = [media.media_id]
-                    print("   ✅ Media upload successful.")
-                except Exception as e:
-                    print(f"   ❌ Media upload failed: {e}")
-                    media_ids = [] # Continue without image if upload fails
+            
+            # Attach ALL images to the first tweet (Create a Gallery)
+            if i == 0 and image_paths:
+                print(f"   📤 Uploading {len(image_paths)} images to Twitter...")
+                for img_path in image_paths:
+                    try:
+                        media = api_v1.media_upload(filename=img_path)
+                        media_ids.append(media.media_id)
+                    except Exception as e:
+                        print(f"   ❌ Image upload failed for {img_path}: {e}")
+                
+                # Twitter limits to 4 media items per tweet
+                media_ids = media_ids[:4]
 
-            # Post Tweet
+            # Post the Tweet
+            print(f"   🕊️ Posting Tweet {i+1}...")
             if i == 0:
                 if media_ids:
                     resp = client_v2.create_tweet(text=text, media_ids=media_ids)
@@ -188,11 +208,12 @@ def post_thread(client_v2, api_v1, tweets, image_path=None, image_credit=None):
                 first_tweet_id = resp.data['id']
                 previous_tweet_id = first_tweet_id
             else:
-                # Reply to previous
+                # Reply to the previous tweet ID to create the thread
                 resp = client_v2.create_tweet(text=text, in_reply_to_tweet_id=previous_tweet_id)
                 previous_tweet_id = resp.data['id']
                 
-            time.sleep(2) # Safety delay
+            # Smart Delay: Wait between tweets to ensure correct ordering
+            time.sleep(5) 
             
         except Exception as e:
             print(f"   ❌ Error posting tweet {i+1}: {e}")
@@ -203,30 +224,37 @@ def post_thread(client_v2, api_v1, tweets, image_path=None, image_credit=None):
 # --- 🏁 RUNNERS ---
 
 def run_car_post(client_v2, api_v1, history):
-    topic = random.choice([t for t in TOPICS if t not in history] or TOPICS)
+    # Select a random car that hasn't been posted yet
+    available_topics = [t for t in TOPICS if t not in history]
+    if not available_topics:
+        available_topics = TOPICS # Reset if all posted
+        
+    topic = random.choice(available_topics)
     print(f"   🏎️ Selected Car: {topic}")
     
-    # 1. Get Image
-    img_path, credit = get_google_image(topic)
+    # 1. Get Images (Google Custom Search)
+    img_paths = get_google_images(topic)
     
-    # 2. Get Thread Content
+    # 2. Get Written Content (Gemini)
     tweet_parts = generate_content(topic)
-    if not tweet_parts: return False
+    if not tweet_parts: 
+        print("   ⚠️ Content generation failed.")
+        return False
     
-    # 3. Post
-    success = post_thread(client_v2, api_v1, tweet_parts, img_path, credit)
+    # 3. Post Thread
+    success = post_thread(client_v2, api_v1, tweet_parts, img_paths)
     
-    # Cleanup
-    if img_path and os.path.exists(img_path):
-        os.remove(img_path)
+    # Cleanup temp files
+    for p in img_paths:
+        if os.path.exists(p): os.remove(p)
         
     if success:
         save_history(topic)
-        print("   ✅ Car Thread Posted.")
+        print("   ✅ Car Thread Posted Successfully.")
     return success
 
 def run():
-    print("--- 🤖 CAR BOT INITIATED ---")
+    print("--- 🤖 SUPER CAR BOT INITIATED ---")
     
     state = get_daily_state()
     if state["count"] >= DAILY_LIMIT:
