@@ -82,7 +82,7 @@ def update_state(count):
 # --- 🧠 AI BRAIN (GEMINI) ---
 def generate_tweet_content(prompt_type, topic_data):
     """Uses Google Gemini to write the tweet text."""
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-2.5-flash')
     
     if prompt_type == "NEWS":
         prompt = (
