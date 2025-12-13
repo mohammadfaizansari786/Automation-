@@ -6,43 +6,19 @@ import datetime
 import time
 import random
 import requests
-import tempfile
 import textwrap
 
 # --- CONFIGURATION ---
-DAILY_LIMIT = 16  # Safe for Free Tier
-POSTS_PER_RUN = 1 
+DAILY_LIMIT = 18
+# Try up to 5 times to find a topic with a good image
+MAX_RETRIES = 5 
 
-# --- HEADERS (Crucial: Prevents Wiki from blocking you) ---
+# --- HEADERS ---
 WIKI_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
 
-# --- 🧠 THE LIBRARY OF EVERYTHING ---
-QUOTES_DATA = [
-    ("Aerodynamics are for people who can't build engines.", "Enzo Ferrari"),
-    ("If you no longer go for a gap that exists, you are no longer a racing driver.", "Ayrton Senna"),
-    ("Speed has never killed anyone, suddenly becoming stationary... that’s what gets you.", "Jeremy Clarkson"),
-    ("To finish first, you must first finish.", "Juan Manuel Fangio"),
-    ("Straight roads are for fast cars, turns are for fast drivers.", "Colin McRae"),
-    ("I don’t drive to get from A to B. I enjoy feeling the car’s reactions, becoming part of it.", "Enzo Ferrari"),
-    ("When I see a curve, I don’t think about the curve. I think about how I can get out of it.", "Gilles Villeneuve"),
-    ("Racing is life. Anything before or after is just waiting.", "Steve McQueen"),
-    ("You win some, lose some, and wreck some.", "Dale Earnhardt"),
-    ("Adding power makes you faster on the straights. Subtracting weight makes you faster everywhere.", "Colin Chapman"),
-    ("The winner ain’t the one with the fastest car, it’s the one who refuses to lose.", "Dale Earnhardt"),
-    ("Simplify, then add lightness.", "Colin Chapman"),
-    ("I am not designed to come second or third. I am designed to win.", "Ayrton Senna"),
-    ("Race cars are neither beautiful nor ugly. They become beautiful when they win.", "Enzo Ferrari"),
-    ("Second place is just the first of the losers.", "Enzo Ferrari")
-]
-
-# Simple list of names for Poll Distractors
-LEGEND_NAMES = list(set([q[1] for q in QUOTES_DATA] + [
-    "Niki Lauda", "James Hunt", "Lewis Hamilton", "Michael Schumacher", 
-    "Carroll Shelby", "Ken Miles", "Adrian Newey", "Christian Horner"
-]))
-
+# --- 🧠 PROFESSIONAL KNOWLEDGE BASE ---
 TOPICS = {
     "CARS": [
         "McLaren F1", "Ferrari F40", "Porsche 959", "Bugatti Veyron", "Bugatti Chiron",
@@ -71,7 +47,9 @@ TOPICS = {
         "Desmodromic valves", "Dry sump", "Ground effect (cars)", "Torque vectoring",
         "Flat-six engine", "Rotary engine", "Pushrod suspension", "Multilink suspension",
         "Space frame chassis", "Transaxle", "Variable valve timing", "Direct injection",
-        "Sequential manual transmission", "Halo (safety device)", "DRS (Drag Reduction System)"
+        "Sequential manual transmission", "Halo (safety device)", "DRS (Drag Reduction System)",
+        "Double wishbone suspension", "Intercooler", "Exhaust manifold", "Camshaft",
+        "Crankshaft", "Differential (mechanical device)", "Traction control system"
     ],
     "LEGENDS": [
         "Ayrton Senna", "Michael Schumacher", "Lewis Hamilton", "Juan Manuel Fangio",
@@ -107,29 +85,20 @@ def get_clients():
     if not API_KEY or not API_SECRET:
         print("❌ Error: API Keys missing.")
         sys.exit(1)
-
-    client_v2 = tweepy.Client(
-        consumer_key=API_KEY,
-        consumer_secret=API_SECRET,
-        access_token=ACCESS_TOKEN,
-        access_token_secret=ACCESS_SECRET
-    )
-
+    client_v2 = tweepy.Client(consumer_key=API_KEY, consumer_secret=API_SECRET, access_token=ACCESS_TOKEN, access_token_secret=ACCESS_SECRET)
     auth = tweepy.OAuth1UserHandler(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_SECRET)
     api_v1 = tweepy.API(auth)
-
     return client_v2, api_v1
 
-# --- WIKI FETCHING (SAFE MODE) ---
+# --- WIKI FETCHING ---
 def get_wiki_data(topic):
     try:
         url = "https://en.wikipedia.org/w/api.php"
+        # Increased pithumbsize to 1200 for HD images
         params = {
             "action": "query", "format": "json", "prop": "extracts|pageimages",
-            "titles": topic, "pithumbsize": 1000, "exintro": 1, "explaintext": 1, "redirects": 1
+            "titles": topic, "pithumbsize": 1200, "exintro": 1, "explaintext": 1, "redirects": 1
         }
-        
-        # ADDED HEADERS HERE TO MIMIC BROWSER
         response = requests.get(url, params=params, headers=WIKI_HEADERS, timeout=15)
         data = response.json()
         pages = data.get("query", {}).get("pages", {})
@@ -143,16 +112,15 @@ def get_wiki_data(topic):
                 "url": f"https://en.wikipedia.org/wiki/{page_data.get('title', topic).replace(' ', '_')}"
             }
     except Exception as e:
-        print(f"⚠️ Wiki Fetch Error: {e}")
-        return None
+        print(f"⚠️ Wiki Error: {e}")
     return None
 
 def download_image(image_url):
     if not image_url: return None
     try:
-        # ADDED HEADERS HERE TOO
         response = requests.get(image_url, headers=WIKI_HEADERS, stream=True, timeout=15)
         if response.status_code == 200:
+            import tempfile
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as temp:
                 for chunk in response.iter_content(1024): temp.write(chunk)
                 return temp.name
@@ -184,121 +152,69 @@ def update_state(count):
     with open(STATE_FILE, "w") as f: json.dump({"date": today, "count": count}, f)
 
 # =========================================
-# ⚔️ MODE 1: VERSUS BATTLE
+# 📚 ENCYCLOPEDIA MODE (With Image Enforcer)
 # =========================================
-def run_versus_mode(client_v2, api_v1, history):
-    print("   ⚔️ Running VS Battle Mode...")
-    candidates = random.sample(TOPICS["CARS"], 2)
-    car1 = get_wiki_data(candidates[0])
-    car2 = get_wiki_data(candidates[1])
+def run_encyclopedia_mode(client_v2, api_v1, history):
+    print("   📚 Running Pro-Encyclopedia Mode...")
     
-    if not car1 or not car2: return False
+    # Weights: Focus heavily on Visuals (Cars/Circuits) but keep Legends/Tech
+    cat_keys = ["CARS", "TECH", "LEGENDS", "CIRCUITS"]
+    cat_weights = [40, 20, 20, 20]
     
-    text = f"⚔️ HEAD-TO-HEAD BATTLE ⚔️\n\n🔴 {car1['title']}\n      VS\n🔵 {car2['title']}\n\nWhich keys are you grabbing? 🤔\n#CarBattle #Versus #{car1['title'].replace(' ','')} #{car2['title'].replace(' ','')}"
+    # Retry Loop to ensure we get an Image
+    selected_data = None
+    selected_cat = None
     
-    media_ids = []
-    for c in [car1, car2]:
-        if c['image_url']:
-            path = download_image(c['image_url'])
-            if path:
-                try:
-                    media = api_v1.media_upload(filename=path)
-                    media_ids.append(media.media_id)
-                    os.remove(path)
-                except: pass
-    
-    try:
-        if media_ids:
-            t1 = client_v2.create_tweet(text=text, media_ids=media_ids)
-        else:
-            t1 = client_v2.create_tweet(text=text)
-            
-        reply_text = f"📊 TALE OF THE TAPE:\n\n1️⃣ {car1['title']}: {textwrap.shorten(car1['text'], 100)}\n\n2️⃣ {car2['title']}: {textwrap.shorten(car2['text'], 100)}\n\n👇 Vote in the replies!"
-        client_v2.create_tweet(text=reply_text, in_reply_to_tweet_id=t1.data['id'])
+    for attempt in range(MAX_RETRIES):
+        cat = random.choices(cat_keys, weights=cat_weights)[0]
         
-        save_history(f"vs_{candidates[0]}_{candidates[1]}")
-        print("   ✅ Battle Posted.")
-        return True
-    except Exception as e:
-        print(f"   ❌ Battle Failed: {e}")
+        available = [t for t in TOPICS[cat] if t not in history]
+        if not available: available = TOPICS[cat] # Reset if exhausted
+        
+        topic = random.choice(available)
+        print(f"   🔍 Attempt {attempt+1}/{MAX_RETRIES}: Checking '{topic}'...")
+        
+        data = get_wiki_data(topic)
+        
+        # QUALITY CHECK: Must have text AND Image
+        if data and data['text'] and data['image_url']:
+            selected_data = data
+            selected_cat = cat
+            break
+        else:
+            print("      ❌ Missing image or text. Skipping.")
+    
+    if not selected_data:
+        print("   ⚠️ Could not find a topic with an image after retries. Aborting run.")
         return False
 
-# =========================================
-# 📊 MODE 2: QUOTE POLL
-# =========================================
-def run_quote_poll_mode(client_v2, history):
-    print("   📊 Running Quote Quiz Mode...")
-    
-    target = random.choice(QUOTES_DATA)
-    quote_text = target[0]
-    correct_author = target[1]
-    
-    quote_id = f"quote_{hash(quote_text)}"
-    if quote_id in history: return False
-    
-    distractors = [n for n in LEGEND_NAMES if n != correct_author]
-    random.shuffle(distractors)
-    choices = distractors[:3] + [correct_author]
-    random.shuffle(choices) 
-    
-    try:
-        text = f"🗣️ WHO SAID IT?\n\n\"{quote_text}\"\n\nVote below! 👇 #MotorsportQuiz #Quotes"
-        client_v2.create_tweet(text=text, poll_options=choices[:4], poll_duration_minutes=1440)
-        save_history(quote_id)
-        print("   ✅ Quote Poll Posted.")
-        return True
-    except Exception as e:
-        print(f"   ❌ Poll Failed: {e}")
-        # Fallback if poll fails
-        try:
-            client_v2.create_tweet(text=f"“{quote_text}” — {correct_author}\n\n#Motorsport #Inspiration")
-            save_history(quote_id)
-            return True
-        except: return False
+    # Formatting Guidelines
+    if selected_cat == "CARS":
+        icon = "🏎️"
+        tags = "#CarCulture #Automotive #DreamGarage"
+    elif selected_cat == "TECH":
+        icon = "⚙️"
+        tags = "#Engineering #AutomotiveTech #Mechanics"
+    elif selected_cat == "LEGENDS":
+        icon = "🏆"
+        tags = "#MotorsportLegend #F1 #RacingHistory"
+    elif selected_cat == "CIRCUITS":
+        icon = "🏁"
+        tags = "#Racetrack #Motorsport #TrackDay"
 
-# =========================================
-# 📚 MODE 3: THE LIBRARY (Threaded)
-# =========================================
-def run_standard_mode(client_v2, api_v1, history):
-    print("   📚 Running Library Mode...")
+    safe_title = "".join(x for x in selected_data['title'] if x.isalnum())
     
-    cat_choices = ["CARS", "TECH", "LEGENDS", "CIRCUITS"]
-    cat_weights = [50, 15, 20, 15]
+    # --- TWEET 1: VISUAL HOOK ---
+    # We enforce a clean 240 char limit for professionalism
+    chunks = textwrap.wrap(selected_data['text'], 240)
+    intro = chunks[0]
     
-    category = random.choices(cat_choices, weights=cat_weights)[0]
-    available = [t for t in TOPICS[category] if t not in history]
-    if not available: available = TOPICS[category]
-    topic = random.choice(available)
-    
-    data = get_wiki_data(topic)
-    if not data: return False
+    tweet1 = f"{icon} {selected_data['title'].upper()}\n\n{intro}\n\n🧵 Thread 👇\n#{safe_title} {tags}"
 
-    if category == "CARS":
-        hook = f"🏎️ ICONIC MACHINE: {data['title']}"
-        tags = "#CarCulture #AutomotiveHistory #DreamGarage"
-    elif category == "TECH":
-        hook = f"⚙️ ENGINEERING: {data['title']}"
-        tags = "#Engineering #CarTech #HowItWorks"
-    elif category == "LEGENDS":
-        hook = f"🏆 RACING LEGEND: {data['title']}"
-        tags = "#Motorsport #F1 #Racing #Legend"
-    elif category == "CIRCUITS":
-        hook = f"🏁 SACRED GROUND: {data['title']}"
-        tags = "#Racetrack #Motorsport #History"
-
-    tweets = []
-    safe_title = "".join(x for x in data['title'] if x.isalnum())
-    
-    tweets.append(f"{hook}\n\n{textwrap.shorten(data['text'], 160)}\n\n🧵 Thread below 👇\n#{safe_title} {tags}")
-    
-    chunks = textwrap.wrap(data['text'], 270)
-    for c in chunks[:4]: 
-        if c not in tweets[0]: tweets.append(c)
-    tweets.append(f"📖 Full History: {data['url']}")
-
+    # Handle Image Download
     media_id = None
-    if data['image_url']:
-        path = download_image(data['image_url'])
+    if selected_data['image_url']:
+        path = download_image(selected_data['image_url'])
         if path:
             try:
                 media = api_v1.media_upload(filename=path)
@@ -307,33 +223,39 @@ def run_standard_mode(client_v2, api_v1, history):
             except: pass
 
     try:
-        prev_id = None
-        for i, txt in enumerate(tweets):
-            if i == 0:
-                resp = client_v2.create_tweet(text=txt, media_ids=[media_id] if media_id else None)
-            else:
-                resp = client_v2.create_tweet(text=txt, in_reply_to_tweet_id=prev_id)
-            prev_id = resp.data['id']
-            # DELAY BETWEEN TWEETS IN THREAD (Humanizes typing speed)
-            time.sleep(random.randint(5, 12)) 
-        save_history(topic)
-        print(f"   ✅ Posted {topic}")
+        # Post Main Tweet
+        print(f"   📝 Posting: {selected_data['title']}...")
+        if media_id:
+            t1 = client_v2.create_tweet(text=tweet1, media_ids=[media_id])
+        else:
+            # Fallback (should rarely happen due to retry loop)
+            t1 = client_v2.create_tweet(text=tweet1)
+        
+        reply_id = t1.data['id']
+        
+        # --- THREAD: DETAILS ---
+        # Post up to 3 detail tweets
+        for chunk in chunks[1:4]:
+            time.sleep(2) 
+            reply = client_v2.create_tweet(text=chunk, in_reply_to_tweet_id=reply_id)
+            reply_id = reply.data['id']
+            
+        # --- FINAL TWEET: SOURCE ---
+        final_text = f"📖 Source & Details: {selected_data['url']}"
+        client_v2.create_tweet(text=final_text, in_reply_to_tweet_id=reply_id)
+
+        save_history(selected_data['title']) # Save title to avoid repeats
+        print(f"   ✅ Successfully posted professional thread for {selected_data['title']}")
         return True
+
     except Exception as e:
-        print(f"   ❌ Library Post Failed: {e}")
+        print(f"   ❌ Post Failed: {e}")
         return False
 
 # --- MAIN RUNNER ---
 def run():
-    print("--- 🤖 AutoLibrary Bot Starting ---")
+    print("--- 🤖 Pro-Bot Starting ---")
     
-    # 💤 CRITICAL: HUMANIZATION DELAY
-    # Random sleep between 1 min and 15 mins
-    # Prevents "Top of the Hour" robotic pattern
-    delay = random.randint(60, 900)
-    print(f"   💤 Sleeping for {delay} seconds to mimic human behavior...")
-    time.sleep(delay)
-
     state = get_daily_state()
     print(f"📊 Daily Count: {state['count']}/{DAILY_LIMIT}")
 
@@ -344,20 +266,10 @@ def run():
     client_v2, api_v1 = get_clients()
     history = load_history()
     
-    # 🎲 DECIDE MODE
-    # 15% Battle | 15% Quote Poll | 70% Thread
-    dice = random.random()
-    success = False
+    success = run_encyclopedia_mode(client_v2, api_v1, history)
     
-    if dice < 0.15:
-        success = run_versus_mode(client_v2, api_v1, history)
-    elif dice < 0.30:
-        success = run_quote_poll_mode(client_v2, history)
-    
-    if not success:
-        run_standard_mode(client_v2, api_v1, history)
-        
-    update_state(state["count"] + 1)
+    if success:
+        update_state(state["count"] + 1)
 
 if __name__ == "__main__":
     run()
