@@ -45,7 +45,6 @@ access_secret = os.getenv("ACCESS_SECRET")
 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 UNSPLASH_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
-NEWS_KEY = os.getenv("NEWS_API_KEY")
 
 HISTORY_FILE = "posted_ids.txt"
 STATE_FILE = "bot_state.json"
@@ -94,13 +93,7 @@ def generate_content(mode, topic_data):
     """
     model = genai.GenerativeModel('gemini-2.5-flash')
     
-    if mode == "NEWS":
-        # News is usually short, single tweet
-        prompt = (
-            f"Write a professional, engaging Twitter post (under 240 chars) about this automotive news: '{topic_data}'. "
-            "Focus on why it matters. Include 2 relevant hashtags. Do NOT use quotes."
-        )
-    elif mode == "CAR_TECH":
+    if mode == "CAR_TECH":
         # Tech needs details -> Thread
         prompt = (
             f"Write a 3-tweet educational thread about '{topic_data}'. "
@@ -167,21 +160,6 @@ def get_unsplash_image(query):
         print(f"   ⚠️ Unsplash Error: {e}")
     return None, None
 
-# --- 📰 NEWS ---
-def get_latest_news(history):
-    if not NEWS_KEY: return None
-    print("   📰 Checking NewsAPI...")
-    # Specific query for better quality
-    url = f"https://newsapi.org/v2/everything?qInTitle='Ferrari' OR 'Lamborghini' OR 'F1' OR 'Porsche' OR 'EV'&language=en&sortBy=publishedAt&apiKey={NEWS_KEY}"
-    try:
-        data = requests.get(url).json()
-        for article in data.get('articles', [])[:5]:
-            if article['url'] in history: continue
-            return {"title": article['title'], "url": article['url']}
-    except Exception as e:
-        print(f"   ⚠️ NewsAPI Error: {e}")
-    return None
-
 # --- 🚀 POSTING LOGIC (THREADS) ---
 def post_thread(client_v2, api_v1, tweets, image_path=None, image_credit=None):
     """
@@ -198,9 +176,8 @@ def post_thread(client_v2, api_v1, tweets, image_path=None, image_credit=None):
                 print("   📤 Uploading media...")
                 media = api_v1.media_upload(filename=image_path)
                 media_ids = [media.media_id]
-                # Add credit to text if fits, or just leave it (professional posts usually don't clutter)
+                # Add credit to text if fits
                 if image_credit:
-                    # Optional: append tiny credit if length allows
                     credit_text = f" 📸 {image_credit}"
                     if len(text) + len(credit_text) < 280:
                         text += credit_text
@@ -227,25 +204,6 @@ def post_thread(client_v2, api_v1, tweets, image_path=None, image_credit=None):
     return True
 
 # --- 🏁 RUNNERS ---
-
-def run_news_post(client_v2, api_v1, history):
-    news = get_latest_news(history)
-    if not news: return False
-    
-    print(f"   Found News: {news['title']}")
-    
-    # Generate content
-    tweet_parts = generate_content("NEWS", news['title'])
-    if not tweet_parts: return False
-    
-    # Add link to the last part (or single part)
-    tweet_parts[-1] += f"\n\n🔗 {news['url']}"
-    
-    success = post_thread(client_v2, api_v1, tweet_parts)
-    if success:
-        save_history(news['url'])
-        print("   ✅ News Posted.")
-    return success
 
 def run_encyclopedia_post(client_v2, api_v1, history):
     # Pick Category & Topic
@@ -283,17 +241,12 @@ def run():
     client_v2, api_v1 = get_clients()
     history = load_history()
     
-    # 30% News, 70% Encyclopedia (since you want details/tech)
-    if random.random() < 0.3:
-        success = run_news_post(client_v2, api_v1, history)
-        if not success: 
-            success = run_encyclopedia_post(client_v2, api_v1, history)
-    else:
-        success = run_encyclopedia_post(client_v2, api_v1, history)
+    # 100% Encyclopedia Mode (No News)
+    success = run_encyclopedia_post(client_v2, api_v1, history)
         
     if success:
         update_state(state["count"] + 1)
 
 if __name__ == "__main__":
     run()
-    
+
