@@ -28,7 +28,8 @@ access_token = os.getenv("ACCESS_TOKEN")
 access_secret = os.getenv("ACCESS_SECRET")
 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-UNSPLASH_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
+GOOGLE_SEARCH_API_KEY = os.getenv("GOOGLE_SEARCH_API_KEY")
+SEARCH_ENGINE_ID = os.getenv("SEARCH_ENGINE_ID")
 
 HISTORY_FILE = "posted_ids.txt"
 STATE_FILE = "bot_state.json"
@@ -95,30 +96,45 @@ def generate_content(car_name):
         print(f"   ⚠️ Gemini Error: {e}")
         return []
 
-# --- 📸 IMAGES (UNSPLASH) ---
-def get_unsplash_image(car_name):
-    if not UNSPLASH_KEY: return None, None
+# --- 📸 IMAGES (GOOGLE SEARCH) ---
+def get_google_image(car_name):
+    if not GOOGLE_SEARCH_API_KEY or not SEARCH_ENGINE_ID:
+        print("❌ Missing Google Search Keys.")
+        return None, None
     
-    # Specific query for car photography
-    search_query = f"{car_name} automotive"
-    print(f"   📸 Searching Unsplash for: {search_query}")
-    
+    # Query optimized for high-quality car photos
+    query = f"{car_name} car wallpaper 4k"
+    print(f"   📸 Searching Google Images for: {query}")
+
+    url = "https://www.googleapis.com/customsearch/v1"
+    params = {
+        'q': query,
+        'cx': SEARCH_ENGINE_ID,
+        'key': GOOGLE_SEARCH_API_KEY,
+        'searchType': 'image',
+        'num': 1,
+        'fileType': 'jpg',  # filter for JPEGs
+        'safe': 'active'
+    }
+
     try:
-        url = f"https://api.unsplash.com/search/photos?query={search_query}&per_page=1&orientation=landscape&client_id={UNSPLASH_KEY}"
-        resp = requests.get(url).json()
-        if resp['results']:
-            result = resp['results'][0]
-            image_url = result['urls']['regular']
-            photographer = result['user']['name']
+        resp = requests.get(url, params=params).json()
+        if 'items' in resp and len(resp['items']) > 0:
+            result = resp['items'][0]
+            image_url = result['link']
+            # Google images don't always have a single "photographer" name like Unsplash, 
+            # so we credit the domain source or leave it blank.
+            source_display = result.get('displayLink', 'Web Source')
             
             # Download
-            img_data = requests.get(image_url).content
+            print(f"   ⬇️ Downloading image from: {image_url}")
+            img_data = requests.get(image_url, timeout=10).content
             import tempfile
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
                 f.write(img_data)
-                return f.name, photographer
+                return f.name, source_display
     except Exception as e:
-        print(f"   ⚠️ Unsplash Error: {e}")
+        print(f"   ⚠️ Google Search Error: {e}")
     return None, None
 
 # --- 🚀 POSTING LOGIC (THREADS) ---
@@ -137,11 +153,11 @@ def post_thread(client_v2, api_v1, tweets, image_path=None, image_credit=None):
                 print("   📤 Uploading media...")
                 media = api_v1.media_upload(filename=image_path)
                 media_ids = [media.media_id]
-                # Add credit to text if fits
-                if image_credit:
-                    credit_text = f" 📸 {image_credit}"
-                    if len(text) + len(credit_text) < 280:
-                        text += credit_text
+                # Add credit to text if fits (optional for Google Images, but good practice)
+                # if image_credit:
+                #    credit_text = f" 📸 {image_credit}"
+                #    if len(text) + len(credit_text) < 280:
+                #        text += credit_text
 
             # Post Tweet
             if i == 0:
@@ -172,8 +188,8 @@ def run_car_post(client_v2, api_v1, history):
     
     print(f"   🏎️ Selected Car: {topic}")
     
-    # 1. Get Image
-    img_path, credit = get_unsplash_image(topic)
+    # 1. Get Image (Using Google Custom Search)
+    img_path, credit = get_google_image(topic)
     
     # 2. Get Thread Content
     tweet_parts = generate_content(topic)
@@ -209,4 +225,3 @@ def run():
 
 if __name__ == "__main__":
     run()
-    
