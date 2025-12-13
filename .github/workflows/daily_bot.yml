@@ -1,10 +1,9 @@
-name: Auto Bot Runner
+name: Super Bot Runner
 
 on:
   schedule:
-    # Runs at minute 13 of every hour
-    - cron: '13 * * * *'
-  workflow_dispatch: # Allows manual trigger
+    - cron: '13 * * * *' # Runs hourly
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -23,15 +22,21 @@ jobs:
           python-version: '3.9'
 
       - name: Install dependencies
+        # Added google-generativeai for Gemini
         run: |
-          pip install tweepy requests
+          pip install tweepy requests google-generativeai
 
       - name: Run Bot Script
         env:
+          # Twitter Keys
           API_KEY: ${{ secrets.API_KEY }}
           API_SECRET: ${{ secrets.API_SECRET }}
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
           ACCESS_SECRET: ${{ secrets.ACCESS_SECRET }}
+          # New Super-Bot Keys
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
         run: python bot.py
 
       - name: Commit and Push History
