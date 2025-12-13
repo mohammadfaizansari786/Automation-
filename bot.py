@@ -10,7 +10,7 @@ import google.generativeai as genai
 import tempfile
 
 # --- CONFIGURATION ---
-DAILY_LIMIT = 18
+DAILY_LIMIT = 16
 IMAGES_PER_TWEET = 4  # Twitter allows max 4 images per tweet
 
 # --- TOPICS (Cars Only) ---
