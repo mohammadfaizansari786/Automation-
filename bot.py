@@ -76,31 +76,31 @@ def update_state(count):
     today = datetime.date.today().isoformat()
     with open(STATE_FILE, "w") as f: json.dump({"date": today, "count": count}, f)
 
-# --- 🧠 AI BRAIN (IMPROVED WRITING) ---
+# --- 🧠 AI BRAIN (PROFESSIONAL WRITING STYLE) ---
 def generate_content(car_name):
     """
-    Generates a high-quality, engaging 3-tweet thread using Gemini.
+    Generates a professional, journalist-style 3-tweet thread using Gemini.
     """
     model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = (
-        f"Act as a professional automotive journalist and car enthusiast. "
-        f"Write a viral, high-energy 3-tweet thread about the '{car_name}'.\n\n"
+        f"Act as a distinguished automotive historian and professional journalist. "
+        f"Write a refined, informative 3-tweet thread about the '{car_name}'.\n\n"
         
-        "Tweet 1 (The Hook): Start with a captivating statement about the car's design or presence. "
-        "Make the reader feel the emotion of seeing it. End with a subtle 'thread 🧵' emoji.\n"
+        "Tweet 1 (The Introduction): Discuss the car's design language, its era, or the philosophy behind its creation. "
+        "Maintain a sophisticated tone. End with a thread indicator (e.g., 🧵).\n"
         
-        "Tweet 2 (The Specs): Focus on the engineering. Use specific numbers (HP, Top Speed, Year). "
-        "Use bullet points or emojis for stats to make it readable (e.g., 🏁 600HP, 🔊 V12). "
-        "Describe the sound or the driving experience.\n"
+        "Tweet 2 (The Engineering): Detail the technical specifications professionally. "
+        "Focus on the engine architecture, displacement, horsepower, or unique mechanical innovations. "
+        "Use clean formatting (e.g., 'Engine: 3.9L V8 | Output: 471 hp'). Avoid excessive emojis.\n"
         
-        "Tweet 3 (The Legacy): Why is this car a legend? Is it a race winner? A poster car? "
-        "End with a strong closing thought. Include exactly 3 relevant hashtags at the very bottom.\n\n"
+        "Tweet 3 (The Legacy): Analyze its impact on the automotive industry or its status in modern collecting. "
+        "Why does this machine matter today? Conclude with 3 relevant, specific hashtags.\n\n"
         
         "Formatting Constraints:\n"
         "- Separate tweets strictly with '|||'.\n"
-        "- Max 260 characters per tweet (leave room for images/replying).\n"
-        "- No generic intro like 'Here is a thread'."
+        "- Max 260 characters per tweet.\n"
+        "- Tone: Professional, authoritative, appreciative."
     )
 
     try:
@@ -118,8 +118,8 @@ def get_google_images(car_name):
     Fetches up to 4 high-quality images for the car using Google Custom Search.
     Includes User-Agent headers to avoid 403 blocks.
     """
-    # Refined query for better results
-    query = f"{car_name} car exterior wallpaper 4k"
+    # Refined query for professional/press-style photos
+    query = f"{car_name} car press kit wallpaper 4k"
     print(f"   📸 Searching Google Images for: {query}")
 
     url = "https://www.googleapis.com/customsearch/v1"
@@ -128,7 +128,7 @@ def get_google_images(car_name):
         'cx': SEARCH_ENGINE_ID,
         'key': GOOGLE_SEARCH_API_KEY,
         'searchType': 'image',
-        'num': 8,  # Fetch extra to allow for filtering bad links
+        'num': 8,  # Fetch extra to allow for filtering
         'fileType': 'jpg',
         'safe': 'active'
     }
