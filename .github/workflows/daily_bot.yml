@@ -32,9 +32,11 @@ jobs:
           API_SECRET: ${{ secrets.API_SECRET }}
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
           ACCESS_SECRET: ${{ secrets.ACCESS_SECRET }}
-          # New Super-Bot Keys
+          # Gemini AI Key
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          # Google Image Search Keys
+          GOOGLE_SEARCH_API_KEY: ${{ secrets.GOOGLE_SEARCH_API_KEY }}
+          SEARCH_ENGINE_ID: ${{ secrets.SEARCH_ENGINE_ID }}
         run: python bot.py
 
       - name: Commit and Push History
@@ -43,4 +45,3 @@ jobs:
           git config --global user.email "actions@github.com"
           git add posted_ids.txt bot_state.json
           git diff --quiet && git diff --staged --quiet || (git commit -m "Update bot history" && git push)
-
